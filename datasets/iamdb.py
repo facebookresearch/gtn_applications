@@ -12,9 +12,11 @@ SPLITS = {
 }
 
 
-class IamDataset(torch.utils.data.Dataset):
+class IamDB(torch.utils.data.Dataset):
 
-    def __init__(self, forms, preprocessor, data_path, split):
+    def __init__(self, data_path, preprocessor, split):
+        forms = load_metadata(data_path)
+
         # Get split keys:
         splits = SPLITS.get(split, None)
         if splits is None:
@@ -57,7 +59,9 @@ class IamDataset(torch.utils.data.Dataset):
 
 class Preprocessor:
 
-    def __init__(self, forms):
+    def __init__(self, data_path):
+        forms = load_metadata(data_path)
+
         # Build the token-to-index and index-to-token maps:
         tokens = set()
         for _, form in forms.items():
@@ -74,7 +78,7 @@ class Preprocessor:
         return "".join(self.index_to_tokens[i] for i in indices)
 
 
-def load_meta_data(data_path):
+def load_metadata(data_path):
     forms = collections.defaultdict(list)
     with open(os.path.join(data_path, "lines.txt"), 'r') as fid:
         lines = (l.strip().split() for l in fid if l[0] != "#")
@@ -87,10 +91,10 @@ def load_meta_data(data_path):
             })
     return forms
 
+
 if __name__ == "__main__":
     data_path = "data/"
-    forms = load_meta_data(data_path)
-    preprocessor = Preprocessor(forms)
-    trainset = IamDataset(forms, preprocessor, data_path, split="train")
-    valset = IamDataset(forms, preprocessor, data_path, split="validation")
-    testset = IamDataset(forms, preprocessor, data_path, split="test")
+    preprocessor = Preprocessor()
+    trainset = IamDB(data_path, preprocessor, split="train")
+    valset = IamDB(data_path, preprocessor, split="validation")
+    testset = IamDB(data_path, preprocessor, split="test")
