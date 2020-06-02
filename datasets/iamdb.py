@@ -12,7 +12,7 @@ SPLITS = {
 }
 
 
-class IamDB(torch.utils.data.Dataset):
+class Dataset(torch.utils.data.Dataset):
 
     def __init__(self, data_path, preprocessor, split):
         forms = load_metadata(data_path)
@@ -42,14 +42,17 @@ class IamDB(torch.utils.data.Dataset):
                     continue
                 self.dataset.append((img, line["box"], line["text"]))
 
+    def sample_sizes(self):
+        """
+        Returns a list of tuples containint the input size
+        (height, width) and the output length for each sample.
+        """
+        return (self.preprocessor.compute_size(box, line)
+                for _, box, line in self.dataset)
+
     def __getitem__(self, index):
         img, box, text = self.dataset[index]
-        x, y, w, h = box
-        size = (20, int((20 / h) * w))
-        inputs = torchvision.transforms.functional.resized_crop(
-            img,
-            y, x, h, w,
-            size)
+        inputs = self.preprocessor.process_img(img, box)
         outputs = self.preprocessor.to_index(text)
         return inputs, outputs
 
@@ -59,7 +62,7 @@ class IamDB(torch.utils.data.Dataset):
 
 class Preprocessor:
 
-    def __init__(self, data_path):
+    def __init__(self, data_path, img_height):
         forms = load_metadata(data_path)
 
         # Build the token-to-index and index-to-token maps:
@@ -71,8 +74,30 @@ class Preprocessor:
         self.tokens_to_index = { t : i
             for i, t in enumerate(self.index_to_tokens)}
 
+        self.img_height = img_height
+        self.transform = torchvision.transforms.ToTensor()
+
+    def compute_size(self, box, line):
+        x, y, w, h = box
+        in_size = (self.img_height, int((self.img_height / h) * w))
+        out_size = len(line)
+        return in_size, out_size
+
+    @property
+    def num_classes(self):
+        return len(self.index_to_tokens)
+
+    def process_img(self, img, box):
+        x, y, w, h = box
+        size = (self.img_height, int((self.img_height / h) * w))
+        img = torchvision.transforms.functional.resized_crop(
+            img,
+            y, x, h, w,
+            size)
+        return self.transform(img)
+
     def to_index(self, line):
-        return [self.tokens_to_index[t] for t in line]
+        return torch.tensor([self.tokens_to_index[t] for t in line])
 
     def to_text(self, indices):
         return "".join(self.index_to_tokens[i] for i in indices)
@@ -95,6 +120,6 @@ def load_metadata(data_path):
 if __name__ == "__main__":
     data_path = "data/"
     preprocessor = Preprocessor()
-    trainset = IamDB(data_path, preprocessor, split="train")
-    valset = IamDB(data_path, preprocessor, split="validation")
-    testset = IamDB(data_path, preprocessor, split="test")
+    trainset = Dataset(data_path, preprocessor, split="train")
+    valset = Dataset(data_path, preprocessor, split="validation")
+    testset = Dataset(data_path, preprocessor, split="test")
