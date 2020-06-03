@@ -34,13 +34,12 @@ class Dataset(torch.utils.data.Dataset):
         # Load each image:
         self.dataset = []
         for key, lines in forms.items():
-            if lines[0]["key"] not in split_keys:
-                continue
-            img = PIL.Image.open(os.path.join(data_path, f"{key}.png"))
             for line in lines:
                 if line["key"] not in split_keys:
+
                     continue
-                self.dataset.append((img, line["box"], line["text"]))
+                img_file = os.path.join(data_path, f"{key}.png")
+                self.dataset.append((img_file, line["box"], line["text"]))
 
     def sample_sizes(self):
         """
@@ -51,7 +50,8 @@ class Dataset(torch.utils.data.Dataset):
                 for _, box, line in self.dataset)
 
     def __getitem__(self, index):
-        img, box, text = self.dataset[index]
+        img_file, box, text = self.dataset[index]
+        img = PIL.Image.open(img_file)
         inputs = self.preprocessor.process_img(img, box)
         outputs = self.preprocessor.to_index(text)
         return inputs, outputs

@@ -38,7 +38,7 @@ def test(model, criterion, data_loader, device):
     n = 0
     distance = 0
     n_tokens = 0
-    for inputs, targets in enumerate(data_loader):
+    for inputs, targets in data_loader:
         outputs = model(inputs.to(device))
         loss += criterion(outputs, targets).item() * len(targets)
         n += len(targets)
