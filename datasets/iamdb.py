@@ -2,7 +2,7 @@ import collections
 import os
 import PIL.Image
 import torch
-import torchvision
+from torchvision import transforms
 
 
 SPLITS = {
@@ -75,7 +75,10 @@ class Preprocessor:
             for i, t in enumerate(self.index_to_tokens)}
 
         self.img_height = img_height
-        self.transform = torchvision.transforms.ToTensor()
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.912], std=[0.168]),
+        ])
 
     def compute_size(self, box, line):
         x, y, w, h = box
@@ -90,7 +93,7 @@ class Preprocessor:
     def process_img(self, img, box):
         x, y, w, h = box
         size = (self.img_height, int((self.img_height / h) * w))
-        img = torchvision.transforms.functional.resized_crop(
+        img = transforms.functional.resized_crop(
             img,
             y, x, h, w,
             size)
@@ -118,8 +121,19 @@ def load_metadata(data_path):
 
 
 if __name__ == "__main__":
-    data_path = "data/"
-    preprocessor = Preprocessor()
-    trainset = Dataset(data_path, preprocessor, split="train")
-    valset = Dataset(data_path, preprocessor, split="validation")
-    testset = Dataset(data_path, preprocessor, split="test")
+    import argparse
+    parser = argparse.ArgumentParser(description='Compute data stats.')
+    parser.add_argument('--data_path', type=str,
+        help='Path to dataset.')
+    args = parser.parse_args()
+
+    preprocessor = Preprocessor(args.data_path, 64)
+    trainset = Dataset(args.data_path, preprocessor, split="train")
+    valset = Dataset(args.data_path, preprocessor, split="validation")
+    testset = Dataset(args.data_path, preprocessor, split="test")
+
+    # Compute mean and var stats:
+    images = torch.cat([trainset[i][0] for i in range(len(trainset))], dim=2)
+    mean = torch.mean(images)
+    std = torch.std(images)
+    print(f"Data mean {mean} and standard deviation {std}.")

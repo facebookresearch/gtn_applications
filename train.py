@@ -49,7 +49,7 @@ def test(model, criterion, data_loader, device):
         n_tokens += toks
 
     logging.info("Loss {:.3f}, CER {:.3f}".format(
-        len(data_loader), loss / n, distance / n_tokens))
+        loss / n, distance / n_tokens))
 
 
 def train(
@@ -74,7 +74,7 @@ def train(
                     batch_idx, len(train_loader), loss, dist / tot, iter_time))
             start_time = time.time()
 
-        print("Evaluating validation set...")
+        logging.info(f"Epoch {epoch + 1} complete. Evaluating validation set...")
         test(model, criterion, valid_loader, device)
 
 
