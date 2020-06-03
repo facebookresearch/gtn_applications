@@ -26,14 +26,30 @@ class RNN(torch.nn.Module):
         return self.linear(outputs)
 
 
-def ctc(blank=0, pad_val=-1):
-    ctc_crit = torch.nn.CTCLoss(blank=blank)
-    def criterion(inputs, targets):
-        input_lengths = torch.tensor([inputs.shape[0]] * inputs.shape[1])
-        target_lengths = torch.sum(targets != pad_val, dim=1)
+class CTC(torch.nn.Module):
+    def __init__(self, blank=0):
+        super(CTC, self).__init__()
+        self.blank = blank
+
+    def forward(self, inputs, targets):
+        input_lengths = [inputs.shape[0]] * inputs.shape[1]
+        target_lengths = [t.numel() for t in targets]
         log_probs = torch.nn.functional.log_softmax(inputs, dim=2)
-        return ctc_crit(log_probs, targets, input_lengths, target_lengths)
-    return criterion
+        targets = torch.cat(targets)
+        return torch.nn.functional.ctc_loss(
+            log_probs, targets, input_lengths, target_lengths,
+            blank=self.blank)
+
+    def decode(self, outputs):
+        predictions = torch.argmax(outputs, dim=2).T.to("cpu")
+        collapsed_predictions = []
+        for pred in predictions.split(1):
+            pred = pred.squeeze()
+            mask = pred[1:] != pred[:-1]
+            pred = torch.cat([pred[0:1], pred[1:][mask]])
+            pred = pred[pred != self.blank]
+            collapsed_predictions.append(pred)
+        return collapsed_predictions
 
 
 def load_model(model_type, input_size, output_size, **kwargs):

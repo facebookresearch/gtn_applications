@@ -23,8 +23,31 @@ def parse_args():
     return args
 
 
-def test():
-    pass
+def compute_edit_distance(predictions, targets):
+    dist = 0
+    n_tokens = 0
+    for p, t in zip(predictions, targets):
+        dist += utils.edit_distance(p, t)[0].item()
+        n_tokens += t.numel()
+    return dist, n_tokens
+
+
+def test(model, criterion, data_loader, device):
+    model.eval()
+    loss = 0.0
+    n = 0
+    distance = 0
+    n_tokens = 0
+    for inputs, targets in enumerate(data_loader):
+        outputs = model(inputs.to(device))
+        loss += criterion(outputs, targets).item() * len(targets)
+        n += len(targets)
+        dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
+        distance += dist
+        n_tokens += toks
+
+    print("Loss {:.3f}, CER {:.3f}".format(
+        len(data_loader), loss / n, distance / n_tokens))
 
 
 def train(
@@ -36,22 +59,21 @@ def train(
         model.train()
         start_time = time.time()
         for batch_idx, (inputs, targets) in enumerate(train_loader):
-            inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
-            outputs = model(inputs)
+            outputs = model(inputs.to(device))
             loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
             loss = loss.item()
+            dist, tot = compute_edit_distance(criterion.decode(outputs), targets)
             iter_time = time.time() - start_time
-            print(inputs.shape)
             print(
-                "Batch {}/{}: Loss {:.3f}, CER {:.3f}, "
-                "Time {:.3f} (s)".format(
-                    batch_idx, len(train_loader), loss, 0.0, iter_time))
+                "Batch {}/{}: Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
+                    batch_idx, len(train_loader), loss, dist / tot, iter_time))
             start_time = time.time()
 
-        test(model, val_loader)
+        print("Evaluating validation set...")
+        test(model, criterion, valid_loader, device)
 
 
 def main():
@@ -86,7 +108,7 @@ def main():
         output_size,
         **config["model"])
     model.to(device=args.device)
-    criterion = models.ctc(blank=output_size - 1, pad_val=-1)
+    criterion = models.CTC(blank=output_size - 1)
 
     # run training:
     train(
