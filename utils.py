@@ -7,7 +7,7 @@ def data_loader(dataset, config):
         batch_sampler=BatchSortedSampler(
             dataset, config["optim"]["batch_size"]),
             collate_fn=padding_collate,
-        num_workers=1)
+        num_workers=8)
 
 
 class BatchSortedSampler(torch.utils.data.Sampler):

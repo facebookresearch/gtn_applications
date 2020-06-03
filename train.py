@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import time
 import torch
 
@@ -15,11 +16,12 @@ def parse_args():
     parser.add_argument('--disable_cuda', action='store_true',
         help='Disable CUDA')
     args = parser.parse_args()
-
+    logging.basicConfig(level=logging.INFO)
     if not args.disable_cuda and torch.cuda.is_available():
         args.device = torch.device('cuda')
     else:
         args.device = torch.device('cpu')
+    logging.info(f"Training with {args.device}.")
     return args
 
 
@@ -46,7 +48,7 @@ def test(model, criterion, data_loader, device):
         distance += dist
         n_tokens += toks
 
-    print("Loss {:.3f}, CER {:.3f}".format(
+    logging.info("Loss {:.3f}, CER {:.3f}".format(
         len(data_loader), loss / n, distance / n_tokens))
 
 
@@ -67,7 +69,7 @@ def train(
             loss = loss.item()
             dist, tot = compute_edit_distance(criterion.decode(outputs), targets)
             iter_time = time.time() - start_time
-            print(
+            logging.info(
                 "Batch {}/{}: Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
                     batch_idx, len(train_loader), loss, dist / tot, iter_time))
             start_time = time.time()
