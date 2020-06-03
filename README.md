@@ -1,2 +1,2 @@
 # rightrec
-A PyTorch library for handwriting recognition.
+A library for handwriting recognition with GTNs.
