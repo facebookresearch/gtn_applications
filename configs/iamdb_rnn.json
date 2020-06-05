@@ -8,14 +8,14 @@
   "model" : {
     "type" : "rnn",
     "cell_type" : "LSTM",
-    "hidden_size" : 128,
+    "hidden_size" : 256,
     "num_layers" : 2,
     "dropout" : 0.0,
     "bidirectional" : true
   },
   "optim" : {
     "batch_size" : 32,
-    "epochs" : 10,
+    "epochs" : 100,
     "learning_rate" : 1e-1
   }
 }
