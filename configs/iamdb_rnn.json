@@ -5,8 +5,11 @@
     "data_path" : "/checkpoint/awni/data/iamdb",
     "img_height" : 64
   },
+  "model_type" : "rnn",
   "model" : {
-    "type" : "rnn",
+    "channels" : [8, 8],
+    "kernel_sizes" : [[5, 5], [5, 5]],
+    "strides" : [[1, 2], [1, 2]],
     "cell_type" : "LSTM",
     "hidden_size" : 256,
     "num_layers" : 2,

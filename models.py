@@ -4,21 +4,24 @@ class RNN(torch.nn.Module):
 
     def __init__(
             self, input_size, output_size, cell_type,
-            hidden_size, num_layers, dropout, bidirectional):
+            hidden_size, num_layers,
+            dropout=0.0, bidirectional=False,
+            channels=[8, 8],
+            kernel_sizes=[[5, 5], [5, 5]],
+            strides=[[2, 2], [2, 2]]
+            ):
         super(RNN, self).__init__()
 
-        # Add convolutional front-end with subsampling
+        # convolutional front-end:
         convs = []
         in_channels = 1
-        out_channels = 8
-        kernel_size = (5, 5)
-        stride = (1, 2)
-        for _ in range(2):
-            padding = (kernel_size[0] // 2, kernel_size[1] // 2)
+        for out_channels, kernel, stride in zip(
+                channels, kernel_sizes, strides):
+            padding = (kernel[0] // 2, kernel[1] // 2)
             convs.append(torch.nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=out_channels,
-                kernel_size=kernel_size,
+                kernel_size=kernel,
                 stride=stride,
                 padding=padding))
             convs.append(torch.nn.ReLU())
@@ -79,16 +82,9 @@ class CTC(torch.nn.Module):
         return collapsed_predictions
 
 
-def load_model(model_type, input_size, output_size, **kwargs):
+def load_model(model_type, input_size, output_size, config):
     if model_type == "rnn":
-        return RNN(
-            input_size,
-            output_size,
-            kwargs["cell_type"],
-            kwargs["hidden_size"],
-            kwargs["num_layers"],
-            kwargs.get("dropout", 0.0),
-            kwargs.get("bidirectional", False))
+        return RNN(input_size, output_size, **config)
     else:
         raise ValueError(f"Unknown model type {model_type}")
 

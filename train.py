@@ -107,10 +107,10 @@ def main():
     # setup Model:
     output_size = preprocessor.num_classes + 1  # account for blank
     model = models.load_model(
-        config["model"]["type"],
+        config["model_type"],
         input_size,
         output_size,
-        **config["model"])
+        config["model"])
     model.to(device=args.device)
     criterion = models.CTC(blank=output_size - 1)
 
