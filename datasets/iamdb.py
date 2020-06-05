@@ -43,7 +43,7 @@ class Dataset(torch.utils.data.Dataset):
 
     def sample_sizes(self):
         """
-        Returns a list of tuples containint the input size
+        Returns a list of tuples containing the input size
         (height, width) and the output length for each sample.
         """
         return (self.preprocessor.compute_size(box, line)

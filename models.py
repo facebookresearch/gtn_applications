@@ -7,10 +7,32 @@ class RNN(torch.nn.Module):
             hidden_size, num_layers, dropout, bidirectional):
         super(RNN, self).__init__()
 
+        # Add convolutional front-end with subsampling
+        convs = []
+        in_channels = 1
+        out_channels = 8
+        kernel_size = (5, 5)
+        stride = (1, 2)
+        for _ in range(2):
+            padding = (kernel_size[0] // 2, kernel_size[1] // 2)
+            convs.append(torch.nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding))
+            convs.append(torch.nn.ReLU())
+            if dropout > 0:
+                convs.append(torch.nn.Dropout(dropout))
+            in_channels = out_channels
+
+        self.convs = torch.nn.Sequential(*convs)
+        rnn_input_size = input_size * out_channels
+
         if cell_type.upper() not in ["RNN", "LSTM", "GRU"]:
             raise ValueError(f"Unkown rnn cell type {cell_type}")
         self.rnn = getattr(torch.nn, cell_type.upper())(
-            input_size=input_size,
+            input_size=rnn_input_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
             dropout=dropout,
@@ -21,7 +43,12 @@ class RNN(torch.nn.Module):
     def forward(self, inputs):
         # inputs shape: [batch size, img height (e.g. input size), img width (e.g. sequence length)]
         # outputs shape: [img width, batch size, num classes]
-        outputs = inputs.permute(2, 0, 1)
+        outputs = inputs.unsqueeze(1)
+        outputs = self.convs(outputs)
+        b, c, h, w = outputs.shape
+        outputs = outputs.reshape(b, c*h, w)
+
+        outputs = outputs.permute(2, 0, 1)
         outputs, _ = self.rnn(outputs)
         return self.linear(outputs)
 

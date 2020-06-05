@@ -29,7 +29,7 @@ def compute_edit_distance(predictions, targets):
     dist = 0
     n_tokens = 0
     for p, t in zip(predictions, targets):
-        dist += utils.edit_distance(p, t)[0].item()
+        dist += utils.edit_distance(p.numpy(), t.numpy())[0].item()
         n_tokens += t.numel()
     return dist, n_tokens
 
@@ -71,7 +71,8 @@ def train(
             iter_time = time.time() - start_time
             logging.info(
                 "Batch {}/{}: Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
-                    batch_idx, len(train_loader), loss, dist / tot, iter_time))
+                    batch_idx + 1, len(train_loader),
+                    loss, dist / tot, iter_time))
             start_time = time.time()
 
         logging.info(f"Epoch {epoch + 1} complete. Evaluating validation set...")
