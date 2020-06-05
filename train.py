@@ -1,4 +1,5 @@
 import argparse
+import editdistance
 import json
 import logging
 import time
@@ -29,7 +30,7 @@ def compute_edit_distance(predictions, targets):
     dist = 0
     n_tokens = 0
     for p, t in zip(predictions, targets):
-        dist += utils.edit_distance(p.numpy(), t.numpy())[0].item()
+        dist += editdistance.eval(p.tolist(), t.tolist())
         n_tokens += t.numel()
     return dist, n_tokens
 
