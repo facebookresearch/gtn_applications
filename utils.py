@@ -1,13 +1,35 @@
+import logging
+import numpy as np
 import torch
 
 
 def data_loader(dataset, config):
+    num_samples = config["data"].get("num_samples", None)
+    if num_samples is not None:
+        logging.info(f"Using {num_samples} of {len(dataset)}.")
+        dataset = Subset(
+            dataset, torch.randperm(len(dataset))[:num_samples])
     return torch.utils.data.DataLoader(
         dataset,
         batch_sampler=BatchSortedSampler(
             dataset, config["optim"]["batch_size"]),
             collate_fn=padding_collate,
-        num_workers=8)
+        num_workers=32)
+
+
+class Subset(torch.utils.data.Subset):
+
+    def __init__(self, dataset, indices):
+        super(Subset, self).__init__(dataset, indices)
+
+    def sample_sizes(self):
+        """
+        Returns a list of tuples containing the input size
+        (height, width) and the output length for each sample.
+        """
+        sizes = list(self.dataset.sample_sizes())
+        for idx in self.indices:
+            yield sizes[idx]
 
 
 class BatchSortedSampler(torch.utils.data.Sampler):
@@ -53,10 +75,10 @@ def edit_distance(ref, hyp):
 
     ins = dels = subs = corr = 0
 
-    D = torch.zeros((n+1, m+1), dtype=torch.long)
+    D = np.zeros((n+1, m+1), dtype=np.long)
 
-    D[:,0] = torch.arange(n+1)
-    D[0,:] = torch.arange(m+1)
+    D[:,0] = np.arange(n+1)
+    D[0,:] = np.arange(m+1)
 
     for i in range(1, n+1):
         for j in range(1, m+1):

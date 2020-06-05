@@ -1,14 +1,15 @@
 import collections
 import os
 import PIL.Image
+import re
 import torch
 from torchvision import transforms
 
 
 SPLITS = {
     "train" : ["trainset"],
-    "validation" : ["validationset1", "validationset2"],
-    "test" : ["testset"],
+    "validation" : ["validationset1"],
+    "test" : ["validationset2", "testset"],
 }
 
 
@@ -73,7 +74,6 @@ class Preprocessor:
         self.index_to_tokens = sorted(list(tokens))
         self.tokens_to_index = { t : i
             for i, t in enumerate(self.index_to_tokens)}
-
         self.img_height = img_height
         self.transform = transforms.Compose([
             transforms.ToTensor(),
@@ -111,12 +111,17 @@ def load_metadata(data_path):
     with open(os.path.join(data_path, "lines.txt"), 'r') as fid:
         lines = (l.strip().split() for l in fid if l[0] != "#")
         for line in lines:
+            text = " ".join(line[8:])
+            # remove garbage tokens:
+            text = text.replace("#", "")
+            text = re.sub(r"\|+", "|", text)
             form_key = "-".join(line[0].split("-")[:-1])
             forms[form_key].append({
                 "key" : line[0],
                 "box" : tuple(int(val) for val in line[4:8]),
-                "text" : line[-1],
+                "text" : text,
             })
+
     return forms
 
 
