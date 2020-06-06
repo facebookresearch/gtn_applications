@@ -1,4 +1,5 @@
 import argparse
+from dataclasses import dataclass
 import editdistance
 import json
 import logging
@@ -35,22 +36,35 @@ def compute_edit_distance(predictions, targets):
     return dist, n_tokens
 
 
+@dataclass
+class Meters:
+    loss = 0.0
+    num_samples = 0
+    num_tokens = 0
+    edit_distance = 0
+
+    @property
+    def avg_loss(self):
+        return self.loss / self.num_samples
+
+    @property
+    def cer(self):
+        return self.edit_distance / self.num_tokens
+
+
 def test(model, criterion, data_loader, device):
     model.eval()
-    loss = 0.0
-    n = 0
-    distance = 0
-    n_tokens = 0
+    meters = Meters()
     for inputs, targets in data_loader:
         outputs = model(inputs.to(device))
-        loss += criterion(outputs, targets).item() * len(targets)
-        n += len(targets)
+        meters.loss += criterion(outputs, targets).item() * len(targets)
+        meters.num_samples += len(targets)
         dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
-        distance += dist
-        n_tokens += toks
+        meters.edit_distance += dist
+        meters.num_tokens += toks
 
     logging.info("Loss {:.3f}, CER {:.3f}".format(
-        loss / n, distance / n_tokens))
+        meters.avg_loss, meters.cer))
 
 
 def train(
@@ -61,23 +75,26 @@ def train(
     for epoch in range(epochs):
         model.train()
         start_time = time.time()
-        for batch_idx, (inputs, targets) in enumerate(train_loader):
+        meters = Meters()
+        for inputs, targets in train_loader:
             optimizer.zero_grad()
             outputs = model(inputs.to(device))
             loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
-            loss = loss.item()
-            dist, tot = compute_edit_distance(criterion.decode(outputs), targets)
-            iter_time = time.time() - start_time
-            logging.info(
-                "Batch {}/{}: Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
-                    batch_idx + 1, len(train_loader),
-                    loss, dist / tot, iter_time))
-            start_time = time.time()
-
-        logging.info(f"Epoch {epoch + 1} complete. Evaluating validation set...")
+            meters.loss += loss.item() * len(targets)
+            meters.num_samples += len(targets)
+            dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
+            meters.edit_distance += dist
+            meters.num_tokens += toks
+        epoch_time = time.time() - start_time
+        logging.info(
+            "Epoch {} complete. "
+            "Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
+                epoch + 1, meters.avg_loss, meters.cer, epoch_time))
+        logging.info("Evaluating validation set..")
         test(model, criterion, valid_loader, device)
+        start_time = time.time()
 
 
 def main():
