@@ -1,6 +1,7 @@
 import collections
 import os
 import PIL.Image
+import random
 import re
 import torch
 from torchvision import transforms
@@ -26,11 +27,28 @@ class Dataset(torch.utils.data.Dataset):
                 f"Invalid split {split}, must be in [{split_names}].")
 
         split_keys = []
-        for split in splits:
-            with open(os.path.join(data_path, f"{split}.txt"), 'r') as fid:
+        for s in splits:
+            with open(os.path.join(data_path, f"{s}.txt"), 'r') as fid:
                 split_keys.extend((l.strip() for l in fid))
 
         self.preprocessor = preprocessor
+
+        # setup image transforms:
+        self.transforms = []
+        if split == "train":
+            self.transforms.extend([
+                RandomResizeCrop(preprocessor.img_height),
+                transforms.RandomRotation(2, fill=(256,)),
+                transforms.ColorJitter(0.5, 0.5, 0.5, 0.5),
+            ])
+        else:
+            self.transforms.append(ResizeCrop(preprocessor.img_height))
+
+        self.transforms.extend([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.912], std=[0.168]),
+        ])
+        self.transforms = transforms.Compose(self.transforms)
 
         # Load each image:
         self.dataset = []
@@ -53,12 +71,50 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         img_file, box, text = self.dataset[index]
         img = PIL.Image.open(img_file)
-        inputs = self.preprocessor.process_img(img, box)
+        inputs = self.transforms((img, box))
         outputs = self.preprocessor.to_index(text)
         return inputs, outputs
 
     def __len__(self):
         return len(self.dataset)
+
+
+class ResizeCrop:
+
+    def __init__(self, img_height):
+        self.img_height = img_height
+
+    def __call__(self, args):
+        img, box = args
+        x, y, w, h = box
+        size = (self.img_height, int((self.img_height / h) * w))
+        return transforms.functional.resized_crop(
+            img,
+            y, x, h, w,
+            size)
+
+
+class RandomResizeCrop:
+
+    def __init__(self, img_height, jitter=10, ratio=0.5):
+        self.img_height = img_height
+        self.jitter = jitter
+        self.ratio = ratio
+
+    def __call__(self, args):
+        img, box = args
+        # add some jitter to x, y, w, h:
+        box = [b + random.randint(-self.jitter, self.jitter) for b in box]
+        x, y, w, h = box
+
+        # randomize aspect ratio:
+        size_w = (self.img_height / h) * w
+        size_w *= random.uniform(1 - self.ratio, 1 + self.ratio)
+        size = (self.img_height, int(size_w))
+        return transforms.functional.resized_crop(
+            img,
+            y, x, h, w,
+            size)
 
 
 class Preprocessor:
@@ -75,10 +131,6 @@ class Preprocessor:
         self.tokens_to_index = { t : i
             for i, t in enumerate(self.index_to_tokens)}
         self.img_height = img_height
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.912], std=[0.168]),
-        ])
 
     def compute_size(self, box, line):
         x, y, w, h = box
@@ -89,15 +141,6 @@ class Preprocessor:
     @property
     def num_classes(self):
         return len(self.index_to_tokens)
-
-    def process_img(self, img, box):
-        x, y, w, h = box
-        size = (self.img_height, int((self.img_height / h) * w))
-        img = transforms.functional.resized_crop(
-            img,
-            y, x, h, w,
-            size)
-        return self.transform(img)
 
     def to_index(self, line):
         return torch.tensor([self.tokens_to_index[t] for t in line])
