@@ -99,7 +99,7 @@ def train(
         min_val_cer = min(val_cer, min_val_cer)
         logging.info("Validation Set: Loss {:.3f}, CER {:.3f}, "
             "Best Loss {:.3f}, Best CER {:.3f}".format(
-            meters.avg_loss, meters.cer, min_val_loss, min_val_cer))
+            val_loss, val_cer, min_val_loss, min_val_cer))
 
         start_time = time.time()
 
