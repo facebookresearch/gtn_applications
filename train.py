@@ -63,8 +63,7 @@ def test(model, criterion, data_loader, device):
         meters.edit_distance += dist
         meters.num_tokens += toks
 
-    logging.info("Loss {:.3f}, CER {:.3f}".format(
-        meters.avg_loss, meters.cer))
+    return meters.avg_loss, meters.cer
 
 
 def train(
@@ -72,6 +71,8 @@ def train(
         epochs, lr, device):
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
+    min_val_loss = float("inf")
+    min_val_cer = float("inf")
     for epoch in range(epochs):
         model.train()
         start_time = time.time()
@@ -93,7 +94,13 @@ def train(
             "Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
                 epoch + 1, meters.avg_loss, meters.cer, epoch_time))
         logging.info("Evaluating validation set..")
-        test(model, criterion, valid_loader, device)
+        val_loss, val_cer = test(model, criterion, valid_loader, device)
+        min_val_loss = min(val_loss, min_val_loss)
+        min_val_cer = min(val_cer, min_val_cer)
+        logging.info("Validation Set: Loss {:.3f}, CER {:.3f}, "
+            "Best Loss {:.3f}, Best CER {:.3f}".format(
+            meters.avg_loss, meters.cer, min_val_loss, min_val_cer))
+
         start_time = time.time()
 
 
@@ -129,6 +136,9 @@ def main():
         output_size,
         config["model"])
     model.to(device=args.device)
+    n_params = sum(p.numel() for p in model.parameters())
+    logging.info("Training {} model with {:,} parameters.".format(
+        config["model_type"], n_params))
     criterion = models.CTC(blank=output_size - 1)
 
     # run training:
