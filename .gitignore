@@ -1,3 +1,6 @@
+# Misc
+.nfs*
+
 # Vim
 *.swp
 
