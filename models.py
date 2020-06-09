@@ -1,5 +1,86 @@
 import torch
 
+
+class TDSBlock(torch.nn.Module):
+
+    def __init__(self, in_channels, img_height, kernel_size, dropout):
+        super(TDSBlock, self).__init__()
+        self.in_channels = in_channels
+        self.img_height = img_height
+        fc_size = in_channels * img_height
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                kernel_size=(1, kernel_size),
+                padding=(0, kernel_size // 2),
+            ),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+        )
+        self.fc = torch.nn.Sequential(
+            torch.nn.Linear(fc_size, fc_size),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(fc_size, fc_size),
+            torch.nn.Dropout(dropout),
+        )
+        self.instance_norms = torch.nn.ModuleList([
+            torch.nn.InstanceNorm1d(fc_size, affine=True),
+            torch.nn.InstanceNorm1d(fc_size, affine=True),
+        ])
+
+    def forward(self, inputs):
+        # inputs shape: [B, C * H, W]
+        B, CH, W = inputs.shape
+        C, H = self.in_channels, self.img_height
+        outputs = self.conv(inputs.view(B, C, H, W)).view(B, CH, W) + inputs
+        outputs = self.instance_norms[0](outputs)
+
+        outputs = self.fc(outputs.transpose(1, 2)).transpose(1, 2) + outputs
+        outputs = self.instance_norms[1](outputs)
+
+        # outputs shape: [B, C * H, W]
+        return outputs
+
+
+class TDS(torch.nn.Module):
+
+    def __init__(
+            self, input_size, output_size, tds_groups, kernel_size, dropout):
+        super(TDS, self).__init__()
+        # TODO might be worth adding a 2D front-end or changing TDS to be a grouped conv
+        # downsample layer -> TDS group -> ... -> Linear output layer
+        modules = []
+        in_channels = input_size
+        for tds_group in tds_groups:
+            # add downsample layer:
+            out_channels = input_size * tds_group["channels"]
+            modules.extend([
+                torch.nn.Conv1d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    padding=kernel_size // 2,
+                    stride=2),
+                torch.nn.ReLU(),
+                torch.nn.Dropout(dropout),
+                torch.nn.InstanceNorm1d(out_channels, affine=True),
+            ])
+            for _ in range(tds_group["num_blocks"]):
+                modules.append(TDSBlock(
+                    tds_group["channels"], input_size, kernel_size, dropout))
+            in_channels = out_channels
+        self.tds = torch.nn.Sequential(*modules)
+        self.linear = torch.nn.Linear(in_channels, output_size)
+
+    def forward(self, inputs):
+        # inputs shape: [B, H, W]
+        outputs = self.tds(inputs)
+        # outputs shape: [W, B, output_size]
+        return self.linear(outputs.permute(2, 0, 1))
+
+
 class RNN(torch.nn.Module):
 
     def __init__(
@@ -85,6 +166,7 @@ class CTC(torch.nn.Module):
 def load_model(model_type, input_size, output_size, config):
     if model_type == "rnn":
         return RNN(input_size, output_size, **config)
+    if model_type == "tds":
+        return TDS(input_size, output_size, **config)
     else:
         raise ValueError(f"Unknown model type {model_type}")
-

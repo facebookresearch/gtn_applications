@@ -1,0 +1,22 @@
+{
+  "seed" : 0,
+  "data" : {
+    "dataset" : "iamdb",
+    "data_path" : "/datasets01/iamdb/060820/",
+    "img_height" : 64
+  },
+  "model_type" : "tds",
+  "model" : {
+    "tds_groups" : [
+      { "channels" : 4, "num_blocks" : 3 },
+      { "channels" : 8, "num_blocks" : 3 }
+    ],
+    "kernel_size" : 11,
+    "dropout" : 0.1
+  },
+  "optim" : {
+    "batch_size" : 32,
+    "epochs" : 100,
+    "learning_rate" : 1e-1
+  }
+}
