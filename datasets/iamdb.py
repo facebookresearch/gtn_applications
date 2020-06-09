@@ -17,7 +17,7 @@ SPLITS = {
 
 class Dataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_path, preprocessor, split):
+    def __init__(self, data_path, preprocessor, split, augment=False):
         forms = load_metadata(data_path)
 
         # Get split keys:
@@ -36,7 +36,7 @@ class Dataset(torch.utils.data.Dataset):
 
         # setup image transforms:
         self.transforms = []
-        if split == "train":
+        if augment:
             self.transforms.extend([
                 RandomResizeCrop(),
                 transforms.RandomRotation(2, fill=(255,)),
@@ -59,7 +59,7 @@ class Dataset(torch.utils.data.Dataset):
                 images.append((img_file, line["box"], preprocessor.img_height))
                 text.append(line["text"])
 
-        with mp.Pool(processes=4) as pool:
+        with mp.Pool(processes=16) as pool:
             images = pool.map(load_image, images)
         self.dataset = list(zip(images, text))
 
@@ -68,7 +68,7 @@ class Dataset(torch.utils.data.Dataset):
         Returns a list of tuples containing the input size
         (width, height) and the output length for each sample.
         """
-        return [image.size for image, text in self.dataset]
+        return [(image.size, len(text)) for image, text in self.dataset]
 
     def __getitem__(self, index):
         img, text = self.dataset[index]
@@ -169,7 +169,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     preprocessor = Preprocessor(args.data_path, 64)
-    trainset = Dataset(args.data_path, preprocessor, split="train")
+    trainset = Dataset(
+        args.data_path, preprocessor, split="train", augment=False)
     valset = Dataset(args.data_path, preprocessor, split="validation")
     testset = Dataset(args.data_path, preprocessor, split="test")
 

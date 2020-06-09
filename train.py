@@ -123,7 +123,8 @@ def main():
     input_size = config["data"]["img_height"]
     data_path = config["data"]["data_path"]
     preprocessor = dataset.Preprocessor(data_path, img_height=input_size)
-    trainset = dataset.Dataset(data_path, preprocessor, split="train")
+    trainset = dataset.Dataset(
+        data_path, preprocessor, split="train", augment=True)
     valset = dataset.Dataset(data_path, preprocessor, split="validation")
     train_loader = utils.data_loader(trainset, config)
     val_loader = utils.data_loader(valset, config)
