@@ -1,4 +1,5 @@
 import collections
+import multiprocessing as mp
 import os
 import PIL.Image
 import random
@@ -37,13 +38,10 @@ class Dataset(torch.utils.data.Dataset):
         self.transforms = []
         if split == "train":
             self.transforms.extend([
-                RandomResizeCrop(preprocessor.img_height),
-                transforms.RandomRotation(2, fill=(256,)),
+                RandomResizeCrop(),
+                transforms.RandomRotation(2, fill=(255,)),
                 transforms.ColorJitter(0.5, 0.5, 0.5, 0.5),
             ])
-        else:
-            self.transforms.append(ResizeCrop(preprocessor.img_height))
-
         self.transforms.extend([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.912], std=[0.168]),
@@ -51,27 +49,30 @@ class Dataset(torch.utils.data.Dataset):
         self.transforms = transforms.Compose(self.transforms)
 
         # Load each image:
-        self.dataset = []
+        images = []
+        text = []
         for key, lines in forms.items():
             for line in lines:
                 if line["key"] not in split_keys:
-
                     continue
                 img_file = os.path.join(data_path, f"{key}.png")
-                self.dataset.append((img_file, line["box"], line["text"]))
+                images.append((img_file, line["box"], preprocessor.img_height))
+                text.append(line["text"])
+
+        with mp.Pool(processes=4) as pool:
+            images = pool.map(load_image, images)
+        self.dataset = list(zip(images, text))
 
     def sample_sizes(self):
         """
         Returns a list of tuples containing the input size
-        (height, width) and the output length for each sample.
+        (width, height) and the output length for each sample.
         """
-        return (self.preprocessor.compute_size(box, line)
-                for _, box, line in self.dataset)
+        return [image.size for image, text in self.dataset]
 
     def __getitem__(self, index):
-        img_file, box, text = self.dataset[index]
-        img = PIL.Image.open(img_file)
-        inputs = self.transforms((img, box))
+        img, text = self.dataset[index]
+        inputs = self.transforms(img)
         outputs = self.preprocessor.to_index(text)
         return inputs, outputs
 
@@ -79,42 +80,41 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.dataset)
 
 
-class ResizeCrop:
-
-    def __init__(self, img_height):
-        self.img_height = img_height
-
-    def __call__(self, args):
-        img, box = args
-        x, y, w, h = box
-        size = (self.img_height, int((self.img_height / h) * w))
-        return transforms.functional.resized_crop(
-            img,
-            y, x, h, w,
-            size)
+def load_image(example):
+    img_file, box, height = example
+    img = PIL.Image.open(img_file)
+    x, y, w, h = box
+    size = (height, int((height / h) * w))
+    return transforms.functional.resized_crop(
+        img,
+        y, x, h, w,
+        size)
 
 
 class RandomResizeCrop:
 
-    def __init__(self, img_height, jitter=10, ratio=0.5):
-        self.img_height = img_height
+    def __init__(self, jitter=10, ratio=0.5):
         self.jitter = jitter
         self.ratio = ratio
 
-    def __call__(self, args):
-        img, box = args
-        # add some jitter to x, y, w, h:
-        box = [b + random.randint(-self.jitter, self.jitter) for b in box]
-        x, y, w, h = box
+    def __call__(self, img):
+        w, h = img.size
+
+        # pad with white:
+        img = transforms.functional.pad(img, self.jitter, fill=255)
+
+        # crop at random (x, y):
+        x = self.jitter + random.randint(-self.jitter, self.jitter)
+        y = self.jitter + random.randint(-self.jitter, self.jitter)
 
         # randomize aspect ratio:
-        size_w = (self.img_height / h) * w
-        size_w *= random.uniform(1 - self.ratio, 1 + self.ratio)
-        size = (self.img_height, int(size_w))
-        return transforms.functional.resized_crop(
+        size_w = w * random.uniform(1 - self.ratio, 1 + self.ratio)
+        size = (h, int(size_w))
+        img = transforms.functional.resized_crop(
             img,
             y, x, h, w,
             size)
+        return img
 
 
 class Preprocessor:
@@ -131,12 +131,6 @@ class Preprocessor:
         self.tokens_to_index = { t : i
             for i, t in enumerate(self.index_to_tokens)}
         self.img_height = img_height
-
-    def compute_size(self, box, line):
-        x, y, w, h = box
-        in_size = (self.img_height, int((self.img_height / h) * w))
-        out_size = len(line)
-        return in_size, out_size
 
     @property
     def num_classes(self):
@@ -164,7 +158,6 @@ def load_metadata(data_path):
                 "box" : tuple(int(val) for val in line[4:8]),
                 "text" : text,
             })
-
     return forms
 
 
