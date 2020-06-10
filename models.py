@@ -166,7 +166,7 @@ class CTC(torch.nn.Module):
 def load_model(model_type, input_size, output_size, config):
     if model_type == "rnn":
         return RNN(input_size, output_size, **config)
-    if model_type == "tds":
+    elif model_type == "tds":
         return TDS(input_size, output_size, **config)
     else:
         raise ValueError(f"Unknown model type {model_type}")
