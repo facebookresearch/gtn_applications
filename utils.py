@@ -14,7 +14,7 @@ def data_loader(dataset, config):
         batch_sampler=BatchSortedSampler(
             dataset, config["optim"]["batch_size"]),
             collate_fn=padding_collate,
-        num_workers=32)
+        num_workers=16)
 
 
 class Subset(torch.utils.data.Subset):
@@ -25,7 +25,7 @@ class Subset(torch.utils.data.Subset):
     def sample_sizes(self):
         """
         Returns a list of tuples containing the input size
-        (height, width) and the output length for each sample.
+        (width, height) and the output length for each sample.
         """
         sizes = list(self.dataset.sample_sizes())
         for idx in self.indices:
@@ -35,7 +35,7 @@ class Subset(torch.utils.data.Subset):
 class BatchSortedSampler(torch.utils.data.Sampler):
 
     def __init__(self, dataset, batch_size, shuffle=True):
-        widths = (in_size[1] for in_size, _ in dataset.sample_sizes())
+        widths = (in_size[0] for in_size, _ in dataset.sample_sizes())
         sorted_dataset = sorted(enumerate(widths), key = lambda x: x[1])
         sorted_indices, _ = zip(*sorted_dataset)
         self.batches = [sorted_indices[idx:idx+batch_size]

@@ -52,6 +52,7 @@ class Meters:
         return self.edit_distance / self.num_tokens
 
 
+@torch.no_grad()
 def test(model, criterion, data_loader, device):
     model.eval()
     meters = Meters()
@@ -59,7 +60,8 @@ def test(model, criterion, data_loader, device):
         outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
-        dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
+        dist, toks = compute_edit_distance(
+            criterion.decode(outputs), targets)
         meters.edit_distance += dist
         meters.num_tokens += toks
 
@@ -68,8 +70,10 @@ def test(model, criterion, data_loader, device):
 
 def train(
         model, criterion, train_loader, valid_loader,
-        epochs, lr, device):
+        epochs, lr, device, step_size):
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=step_size, gamma=0.5)
 
     min_val_loss = float("inf")
     min_val_cer = float("inf")
@@ -101,6 +105,7 @@ def train(
             "Best Loss {:.3f}, Best CER {:.3f}".format(
             val_loss, val_cer, min_val_loss, min_val_cer))
 
+        scheduler.step()
         start_time = time.time()
 
 
@@ -123,7 +128,8 @@ def main():
     input_size = config["data"]["img_height"]
     data_path = config["data"]["data_path"]
     preprocessor = dataset.Preprocessor(data_path, img_height=input_size)
-    trainset = dataset.Dataset(data_path, preprocessor, split="train")
+    trainset = dataset.Dataset(
+        data_path, preprocessor, split="train", augment=True)
     valset = dataset.Dataset(data_path, preprocessor, split="validation")
     train_loader = utils.data_loader(trainset, config)
     val_loader = utils.data_loader(valset, config)
@@ -146,7 +152,8 @@ def main():
         model, criterion, train_loader, val_loader,
         epochs=config["optim"]["epochs"],
         lr=config["optim"]["learning_rate"],
-        device=args.device)
+        device=args.device,
+        step_size=config["optim"]["step_size"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 import collections
+import multiprocessing as mp
 import os
 import PIL.Image
+import random
 import re
 import torch
 from torchvision import transforms
@@ -15,7 +17,7 @@ SPLITS = {
 
 class Dataset(torch.utils.data.Dataset):
 
-    def __init__(self, data_path, preprocessor, split):
+    def __init__(self, data_path, preprocessor, split, augment=False):
         forms = load_metadata(data_path)
 
         # Get split keys:
@@ -26,39 +28,93 @@ class Dataset(torch.utils.data.Dataset):
                 f"Invalid split {split}, must be in [{split_names}].")
 
         split_keys = []
-        for split in splits:
-            with open(os.path.join(data_path, f"{split}.txt"), 'r') as fid:
+        for s in splits:
+            with open(os.path.join(data_path, f"{s}.txt"), 'r') as fid:
                 split_keys.extend((l.strip() for l in fid))
 
         self.preprocessor = preprocessor
 
+        # setup image transforms:
+        self.transforms = []
+        if augment:
+            self.transforms.extend([
+                RandomResizeCrop(),
+                transforms.RandomRotation(2, fill=(255,)),
+                transforms.ColorJitter(0.5, 0.5, 0.5, 0.5),
+            ])
+        self.transforms.extend([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.912], std=[0.168]),
+        ])
+        self.transforms = transforms.Compose(self.transforms)
+
         # Load each image:
-        self.dataset = []
+        images = []
+        text = []
         for key, lines in forms.items():
             for line in lines:
                 if line["key"] not in split_keys:
-
                     continue
                 img_file = os.path.join(data_path, f"{key}.png")
-                self.dataset.append((img_file, line["box"], line["text"]))
+                images.append((img_file, line["box"], preprocessor.img_height))
+                text.append(line["text"])
+
+        with mp.Pool(processes=16) as pool:
+            images = pool.map(load_image, images)
+        self.dataset = list(zip(images, text))
 
     def sample_sizes(self):
         """
         Returns a list of tuples containing the input size
-        (height, width) and the output length for each sample.
+        (width, height) and the output length for each sample.
         """
-        return (self.preprocessor.compute_size(box, line)
-                for _, box, line in self.dataset)
+        return [(image.size, len(text)) for image, text in self.dataset]
 
     def __getitem__(self, index):
-        img_file, box, text = self.dataset[index]
-        img = PIL.Image.open(img_file)
-        inputs = self.preprocessor.process_img(img, box)
+        img, text = self.dataset[index]
+        inputs = self.transforms(img)
         outputs = self.preprocessor.to_index(text)
         return inputs, outputs
 
     def __len__(self):
         return len(self.dataset)
+
+
+def load_image(example):
+    img_file, box, height = example
+    img = PIL.Image.open(img_file)
+    x, y, w, h = box
+    size = (height, int((height / h) * w))
+    return transforms.functional.resized_crop(
+        img,
+        y, x, h, w,
+        size)
+
+
+class RandomResizeCrop:
+
+    def __init__(self, jitter=10, ratio=0.5):
+        self.jitter = jitter
+        self.ratio = ratio
+
+    def __call__(self, img):
+        w, h = img.size
+
+        # pad with white:
+        img = transforms.functional.pad(img, self.jitter, fill=255)
+
+        # crop at random (x, y):
+        x = self.jitter + random.randint(-self.jitter, self.jitter)
+        y = self.jitter + random.randint(-self.jitter, self.jitter)
+
+        # randomize aspect ratio:
+        size_w = w * random.uniform(1 - self.ratio, 1 + self.ratio)
+        size = (h, int(size_w))
+        img = transforms.functional.resized_crop(
+            img,
+            y, x, h, w,
+            size)
+        return img
 
 
 class Preprocessor:
@@ -75,29 +131,10 @@ class Preprocessor:
         self.tokens_to_index = { t : i
             for i, t in enumerate(self.index_to_tokens)}
         self.img_height = img_height
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.912], std=[0.168]),
-        ])
-
-    def compute_size(self, box, line):
-        x, y, w, h = box
-        in_size = (self.img_height, int((self.img_height / h) * w))
-        out_size = len(line)
-        return in_size, out_size
 
     @property
     def num_classes(self):
         return len(self.index_to_tokens)
-
-    def process_img(self, img, box):
-        x, y, w, h = box
-        size = (self.img_height, int((self.img_height / h) * w))
-        img = transforms.functional.resized_crop(
-            img,
-            y, x, h, w,
-            size)
-        return self.transform(img)
 
     def to_index(self, line):
         return torch.tensor([self.tokens_to_index[t] for t in line])
@@ -121,7 +158,6 @@ def load_metadata(data_path):
                 "box" : tuple(int(val) for val in line[4:8]),
                 "text" : text,
             })
-
     return forms
 
 
@@ -133,7 +169,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     preprocessor = Preprocessor(args.data_path, 64)
-    trainset = Dataset(args.data_path, preprocessor, split="train")
+    trainset = Dataset(
+        args.data_path, preprocessor, split="train", augment=False)
     valset = Dataset(args.data_path, preprocessor, split="validation")
     testset = Dataset(args.data_path, preprocessor, split="test")
 
