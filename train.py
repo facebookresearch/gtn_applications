@@ -70,7 +70,7 @@ def test(model, criterion, data_loader, device):
 
 def train(
         model, criterion, train_loader, valid_loader,
-        epochs, lr, device, step_size):
+        epochs, lr, device, step_size, max_grad_norm=None):
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=step_size, gamma=0.5)
@@ -86,6 +86,9 @@ def train(
             outputs = model(inputs.to(device))
             loss = criterion(outputs, targets)
             loss.backward()
+            if max_grad_norm is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_grad_norm)
             optimizer.step()
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
@@ -153,7 +156,8 @@ def main():
         epochs=config["optim"]["epochs"],
         lr=config["optim"]["learning_rate"],
         device=args.device,
-        step_size=config["optim"]["step_size"])
+        step_size=config["optim"]["step_size"],
+        max_grad_norm=config["optim"].get("max_grad_norm", None))
 
 
 if __name__ == "__main__":
