@@ -1,0 +1,25 @@
+{
+  "seed" : 0,
+  "data" : {
+    "dataset" : "iamdb",
+    "data_path" : "/datasets01/iamdb/060820/",
+    "img_height" : 64
+  },
+  "model_type" : "tds2d",
+  "model" : {
+    "depth" : 4,
+    "tds_groups" : [
+      { "channels" : 4, "num_blocks" : 3 },
+      { "channels" : 8, "num_blocks" : 3 }
+    ],
+    "kernel_size" : 11,
+    "dropout" : 0.1
+  },
+  "optim" : {
+    "batch_size" : 32,
+    "epochs" : 400,
+    "learning_rate" : 5e-2,
+    "step_size" : 100,
+    "max_grad_norm" : 5
+  }
+}
