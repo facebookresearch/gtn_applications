@@ -5,13 +5,16 @@
     "data_path" : "/datasets01/iamdb/060820/",
     "img_height" : 64
   },
-  "model_type" : "tds",
+  "model_type" : "tds2d",
   "model" : {
+    "depth" : 4,
     "tds_groups" : [
-      { "channels" : 6, "num_blocks" : 3 },
-      { "channels" : 12, "num_blocks" : 3 }
+      { "channels" : 4, "num_blocks" : 3, "stride" : [2, 2] },
+      { "channels" : 16, "num_blocks" : 3, "stride" : [2, 2] },
+      { "channels" : 32, "num_blocks" : 3, "stride" : [2, 1] },
+      { "channels" : 64, "num_blocks" : 3, "stride" : [2, 1] }
     ],
-    "kernel_size" : 11,
+    "kernel_size" : [5, 7],
     "dropout" : 0.1
   },
   "optim" : {

@@ -1,4 +1,94 @@
 import torch
+import numpy as np
+
+
+class TDSBlock2d(torch.nn.Module):
+
+    def __init__(self, in_channels, img_depth, kernel_size, dropout):
+        super(TDSBlock2d, self).__init__()
+        self.in_channels = in_channels
+        self.img_depth = img_depth
+        fc_size = in_channels * img_depth
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv3d(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                kernel_size=(1, kernel_size[0], kernel_size[1]),
+                padding=(0, kernel_size[0] // 2, kernel_size[1] // 2),
+            ),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+        )
+        self.fc = torch.nn.Sequential(
+            torch.nn.Linear(fc_size, fc_size),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(fc_size, fc_size),
+            torch.nn.Dropout(dropout),
+        )
+        self.instance_norms = torch.nn.ModuleList([
+            torch.nn.InstanceNorm2d(fc_size, affine=True),
+            torch.nn.InstanceNorm2d(fc_size, affine=True),
+        ])
+
+    def forward(self, inputs):
+        # inputs shape: [B, CD, H, W]
+        B, CD, H, W = inputs.shape
+        C, D = self.in_channels, self.img_depth
+        outputs = self.conv(inputs.view(B, C, D, H, W)).view(B, CD, H, W) + inputs
+        outputs = self.instance_norms[0](outputs)
+
+        outputs = self.fc(outputs.transpose(1, 3)).transpose(1, 3) + outputs
+        outputs = self.instance_norms[1](outputs)
+
+        # outputs shape: [B, CD, H, W]
+        return outputs
+
+
+class TDS2d(torch.nn.Module):
+
+    def __init__(
+            self, input_size, output_size, depth, tds_groups, kernel_size, dropout):
+        super(TDS2d, self).__init__()
+        # downsample layer -> TDS2d group -> ... -> Linear output layer
+        modules = []
+        in_channels = 1
+        stride_h = np.prod([grp["stride"][0] for grp in tds_groups])
+        assert input_size % stride_h == 0, \
+            f"Image height not divisible by total stride {stride_h}."
+        for tds_group in tds_groups:
+            # add downsample layer:
+            out_channels = depth * tds_group["channels"]
+            modules.extend([
+                torch.nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    padding=(kernel_size[0] // 2, kernel_size[1] // 2),
+                    stride=tds_group["stride"]),
+                torch.nn.ReLU(),
+                torch.nn.Dropout(dropout),
+                torch.nn.InstanceNorm2d(out_channels, affine=True),
+            ])
+            for _ in range(tds_group["num_blocks"]):
+                modules.append(TDSBlock2d(
+                    tds_group["channels"], depth, kernel_size, dropout))
+            in_channels = out_channels
+        self.tds = torch.nn.Sequential(*modules)
+        self.linear = torch.nn.Linear(
+            in_channels * input_size // stride_h, output_size)
+
+    def forward(self, inputs):
+        # inputs shape: [B, H, W]
+        outputs = inputs.unsqueeze(1)
+        outputs = self.tds(outputs)
+
+        # outputs shape: [B, C, H, W]
+        B, C, H, W = outputs.shape
+        outputs = outputs.reshape(B, C * H, W)
+
+        # outputs shape: [W, B, output_size]
+        return self.linear(outputs.permute(2, 0, 1))
 
 
 class TDSBlock(torch.nn.Module):
@@ -168,5 +258,7 @@ def load_model(model_type, input_size, output_size, config):
         return RNN(input_size, output_size, **config)
     elif model_type == "tds":
         return TDS(input_size, output_size, **config)
+    elif model_type == "tds2d":
+        return TDS2d(input_size, output_size, **config)
     else:
         raise ValueError(f"Unknown model type {model_type}")
