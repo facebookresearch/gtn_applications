@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from utils import CTCLoss
 
 
 class TDSBlock2d(torch.nn.Module):
@@ -228,18 +229,24 @@ class RNN(torch.nn.Module):
 
 
 class CTC(torch.nn.Module):
-    def __init__(self, blank=0):
+    def __init__(self, blank=0, use_gtn = False):
         super(CTC, self).__init__()
         self.blank = blank
+        self.use_gtn = use_gtn
 
     def forward(self, inputs, targets):
         input_lengths = [inputs.shape[0]] * inputs.shape[1]
         target_lengths = [t.numel() for t in targets]
         log_probs = torch.nn.functional.log_softmax(inputs, dim=2)
-        targets = torch.cat(targets)
-        return torch.nn.functional.ctc_loss(
-            log_probs, targets, input_lengths, target_lengths,
-            blank=self.blank)
+        
+        if self.use_gtn:
+            log_probs = log_probs.permute(1, 0, 2).contiguous() # T x B X C ->  B x T x C
+            return CTCLoss(log_probs, targets, self.blank, 'mean')
+        else:
+            targets = torch.cat(targets)
+            return torch.nn.functional.ctc_loss(
+                log_probs, targets, input_lengths, target_lengths,
+                blank=self.blank)
 
     def decode(self, outputs):
         predictions = torch.argmax(outputs, dim=2).T.to("cpu")

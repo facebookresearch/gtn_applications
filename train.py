@@ -17,6 +17,8 @@ def parse_args():
         help='A json configuration file for experiment.')
     parser.add_argument('--disable_cuda', action='store_true',
         help='Disable CUDA')
+    parser.add_argument('--use_gtn', action='store_true',
+        help='Use GTN')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     if not args.disable_cuda and torch.cuda.is_available():
@@ -24,6 +26,11 @@ def parse_args():
     else:
         args.device = torch.device('cpu')
     logging.info(f"Training with {args.device}.")
+    if args.use_gtn:
+        logging.info("Using GTN")
+    else:
+        logging.info("Not using GTN")
+
     return args
 
 
@@ -148,7 +155,7 @@ def main():
     n_params = sum(p.numel() for p in model.parameters())
     logging.info("Training {} model with {:,} parameters.".format(
         config["model_type"], n_params))
-    criterion = models.CTC(blank=output_size - 1)
+    criterion = models.CTC(blank=output_size - 1, use_gtn=args.use_gtn)
 
     # run training:
     train(
