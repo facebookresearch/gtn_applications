@@ -1,12 +1,16 @@
-import os
+from concurrent.futures import ThreadPoolExecutor
+import gtn
 import logging
 import numpy as np
+import os
+import struct
+import sys
 import time
 import torch
-import struct
-import gtn
-from concurrent.futures import ThreadPoolExecutor
-import threading
+
+
+def thread_init():
+    torch.set_num_threads(1)
 
 
 def get_data_ptr_as_bytes(tensor, offset=0):
@@ -139,7 +143,7 @@ class CTCLossFunction(torch.autograd.Function):
 
         def process(b):
             # create emission graph
-            emissions = gtn.create_linear_graph(
+            emissions = gtn.array_to_linear_graph(
                 get_data_ptr_as_bytes(log_probs, b * T * C * 4), T, C, True)
 
             # create criterion graph
@@ -158,7 +162,7 @@ class CTCLossFunction(torch.autograd.Function):
                     criterion.add_arc(l - 2, l, label)
 
             # compose the graphs
-            fwd_graph = gtn.forward(gtn.compose(emissions, criterion))
+            fwd_graph = gtn.forward_score(gtn.compose(emissions, criterion))
             scale = -1.0
             if reduction == "mean":
                 scale = -1.0 / L if L > 0 else scale
@@ -168,16 +172,16 @@ class CTCLossFunction(torch.autograd.Function):
             loss[b] = fwd_graph.item() * scale
 
             if grad_enabled:
-                gtn.backward(fwd_graph)
-                gtn.extract_linear_grad(
-                    emissions, scale,
+                gtn.backward(fwd_graph, False)
+                gtn.linear_graph_to_array(
+                    emissions.grad(),
                     get_data_ptr_as_bytes(input_grad, b * T * C * 4))
+                input_grad[b] *= scale
 
-        # TODO: remove hard coding of max_workers
-        executor = ThreadPoolExecutor(max_workers=10)
-        for b in range(B):
-            executor.submit(process, b)
-        executor.shutdown()
+        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
+        futures = [executor.submit(process, b) for b in range(B)]
+        for f in futures:
+            f.result()
         ctx.constant = input_grad.cuda() / B if is_cuda else input_grad / B
         return torch.mean(loss.cuda() if is_cuda else loss)
 
