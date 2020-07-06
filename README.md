@@ -4,13 +4,13 @@ A library for handwriting recognition with GTNs.
 
 ## Installing
 
-Step 1: Build python bindings for GTN library from [here](https://github.com/fairinternal/gtn#using-python-bindings)
+1. Build python bindings for GTN library from [here](https://github.com/fairinternal/gtn#using-python-bindings)
 
-Step 2: conda activate gtn_env # using the same environment from Step 1
+2. `conda activate gtn_env # using the same environment from Step 1`
 
-Step 3: conda install -c nogil pytorch
+3. `conda install -c nogil pytorch torchvision`
 
-Step 4: pip install -e requirements.txt
+4. `pip install -e requirements.txt`
 
 ## Training
 
