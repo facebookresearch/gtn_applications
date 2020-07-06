@@ -12,6 +12,36 @@ Step 3: conda install -c nogil pytorch
 
 Step 4: pip install -e requirements.txt
 
+## Training
+
+We give an example of how to trian on the [IAM off-line handwriting recognition](http://www.fki.inf.unibe.ch/databases/iam-handwriting-database)
+benchmark.
+
+First download the dataset:
+```
+./datasets/download_iamdb.sh <path_to_data>
+```
+
+Then update the configuration JSON `configs/iamdb_tds2d.json` to point to the
+data path used above:
+```
+  "data" : {
+    "dataset" : "iamdb",
+    "data_path" : "<path_to_data>",
+    "img_height" : 64
+  },
+```
+
+Single GPU training can be run with:
+```
+python train.py --config configs/iamdb_tds2d.json
+```
+
+For a list of options type:
+```
+python train.py -h
+```
+
 ## Contributing
 
 Use [Black](https://github.com/psf/black) tool for formatting the python code.
