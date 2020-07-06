@@ -4,7 +4,7 @@ A library for handwriting recognition with GTNs.
 
 ## Installing
 
-1. Build python bindings for GTN library from [here](https://github.com/fairinternal/gtn#using-python-bindings)
+1. Build python bindings for [GTN library](https://github.com/fairinternal/gtn#using-python-bindings).
 
 2. `conda activate gtn_env # using the same environment from Step 1`
 
