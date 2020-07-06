@@ -4,13 +4,43 @@ A library for handwriting recognition with GTNs.
 
 ## Installing
 
-Step 1: Build python bindings for GTN library from [here](https://github.com/fairinternal/gtn#using-python-bindings)
+1. Build python bindings for the [GTN library](https://github.com/fairinternal/gtn#using-python-bindings).
 
-Step 2: conda activate gtn_env # using the same environment from Step 1
+2. `conda activate gtn_env # using the same environment from Step 1`
 
-Step 3: conda install -c nogil pytorch
+3. `conda install -c nogil pytorch torchvision`
 
-Step 4: pip install -e requirements.txt
+4. `pip install -e requirements.txt`
+
+## Training
+
+We give an example of how to trian on the [IAM off-line handwriting recognition](http://www.fki.inf.unibe.ch/databases/iam-handwriting-database)
+benchmark.
+
+First download the dataset:
+```
+./datasets/download_iamdb.sh <path_to_data>
+```
+
+Then update the configuration JSON `configs/iamdb_tds2d.json` to point to the
+data path used above:
+```
+  "data" : {
+    "dataset" : "iamdb",
+    "data_path" : "<path_to_data>",
+    "img_height" : 64
+  },
+```
+
+Single GPU training can be run with:
+```
+python train.py --config configs/iamdb_tds2d.json
+```
+
+For a list of options type:
+```
+python train.py -h
+```
 
 ## Contributing
 
