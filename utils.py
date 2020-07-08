@@ -13,10 +13,6 @@ def thread_init():
     torch.set_num_threads(1)
 
 
-def get_data_ptr_as_bytes(tensor, offset=0):
-    return struct.pack("P", tensor.data_ptr() + offset)
-
-
 def data_loader(dataset, config, world_rank, world_size):
     num_samples = config["data"].get("num_samples", None)
     if num_samples is not None:
@@ -143,8 +139,8 @@ class CTCLossFunction(torch.autograd.Function):
 
         def process(b):
             # create emission graph
-            emissions = gtn.array_to_linear_graph(
-                get_data_ptr_as_bytes(log_probs, b * T * C * 4), T, C, True)
+            emissions = gtn.linear_graph(T, C, True)
+            emissions.set_weights(log_probs[b].flatten().tolist())
 
             # create criterion graph
             criterion = gtn.Graph(False)
@@ -173,9 +169,8 @@ class CTCLossFunction(torch.autograd.Function):
 
             if grad_enabled:
                 gtn.backward(fwd_graph, False)
-                gtn.linear_graph_to_array(
-                    emissions.grad(),
-                    get_data_ptr_as_bytes(input_grad, b * T * C * 4))
+                grad = emissions.grad().weights()
+                input_grad[b] = torch.Tensor(grad).view(1, T, C)
                 input_grad[b] *= scale
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
