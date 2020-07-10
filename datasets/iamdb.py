@@ -119,28 +119,40 @@ class RandomResizeCrop:
 
 class Preprocessor:
 
-    def __init__(self, data_path, img_height):
+    def __init__(self, data_path, img_height, tokens_path=None):
         forms = load_metadata(data_path)
 
-        # Build the token-to-index and index-to-token maps:
-        tokens = set()
+        # Load the set of graphemes:
+        graphemes = set()
         for _, form in forms.items():
             for line in form:
-                tokens.update(line["text"])
-        self.index_to_tokens = sorted(list(tokens))
-        self.tokens_to_index = { t : i
-            for i, t in enumerate(self.index_to_tokens)}
+                graphemes.update(line["text"])
+        graphemes = sorted(list(graphemes))
+
+        # Build the token-to-index and index-to-token maps:
+        if tokens_path is not None:
+            with open(tokens_path, 'r') as fid:
+                tokens = sorted([l.strip() for l in fid])
+        else:
+            # Default to use graphemes if no tokens are provided
+            tokens = graphemes
+
+        self.tokens = tokens
+        self.graphemes = graphemes
+        self.graphemes_to_index = { t : i
+            for i, t in enumerate(self.graphemes)}
         self.img_height = img_height
 
     @property
     def num_classes(self):
-        return len(self.index_to_tokens)
+        return len(self.tokens)
 
     def to_index(self, line):
-        return torch.tensor([self.tokens_to_index[t] for t in line])
+        return torch.tensor([self.graphemes_to_index[t] for t in line])
 
     def to_text(self, indices):
-        return "".join(self.index_to_tokens[i] for i in indices)
+        # TODO should we use the tokens or the graphemes here?
+        return "".join(self.graphemes[i] for i in indices)
 
 
 def load_metadata(data_path):

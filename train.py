@@ -11,6 +11,7 @@ import torch
 import datasets
 import models
 import utils
+import transducer
 
 
 def parse_args():
@@ -161,7 +162,13 @@ def train(world_rank, args):
 
     input_size = config["data"]["img_height"]
     data_path = config["data"]["data_path"]
-    preprocessor = dataset.Preprocessor(data_path, img_height=input_size)
+    preprocessor = dataset.Preprocessor(
+            data_path,
+            img_height=input_size,
+            tokens_path=config["data"].get("tokens_path"))
+    import pdb
+    pdb.set_trace()
+    # TODO update preprocessor to load tokens from file is specified
     trainset = dataset.Dataset(data_path,
                                preprocessor,
                                split="train",
@@ -172,14 +179,20 @@ def train(world_rank, args):
     val_loader = utils.data_loader(valset, config, world_rank, args.world_size)
 
     # setup Model:
-    output_size = preprocessor.num_classes + 1  # account for blank
+    output_size = preprocessor.num_classes
+    if config["criterion"]["blank"]:
+         output_size += 1  # account for blank
     model = models.load_model(config["model_type"], input_size, output_size,
                               config["model"]).to(world_rank)
     n_params = sum(p.numel() for p in model.parameters())
     logging.info("Training {} model with {:,} parameters.".format(
         config["model_type"], n_params))
-    criterion = models.CTC(blank=output_size - 1,
-                           use_gtn=args.use_gtn).to(world_rank)
+
+    if args.use_gtn:
+        criterion = transducer.Transducer(preprocessor.tokens, preprocess.graphemes)
+    else:
+        criterion = models.CTC(blank=output_size - 1,
+                               use_gtn=args.use_gtn).to(world_rank)
 
     if is_distributed_train:
         model = torch.nn.parallel.DistributedDataParallel(
