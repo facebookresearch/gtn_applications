@@ -10,7 +10,7 @@ def thread_init():
 def make_chain_graph(sequence):
     graph = gtn.Graph(False)
     graph.add_node(True)
-    for i, s in range(sequence):
+    for i, s in enumerate(sequence):
         graph.add_node(False, i == (len(sequence) - 1))
         graph.add_arc(i, i + 1, sequence[i])
     return graph
@@ -88,10 +88,11 @@ class TransducerLossFunction(torch.autograd.Function):
         def process(b):
             # Create emissions graph:
             emissions = gtn.linear_graph(T, C, True)
-            emissions.set_weights(inputs[b].cpu().data_ptr)
+            # TODO, we ought to use data_ptr here and avoid conversions to/from python lists
+            emissions.set_weights(inputs[b].cpu().flatten().tolist())
 
             # Create alignment graph:
-            target = make_chain_graph(target[b])
+            target = make_chain_graph(targets[b])
             alignments = gtn.project_input(gtn.remove(gtn.compose(tokens, target)))
             num = gtn.forward_score(gtn.intersect(emissions, alignments))
             if transitions is not None:
@@ -104,7 +105,7 @@ class TransducerLossFunction(torch.autograd.Function):
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
             f.result()
-        return torch.mean(loss.cuda() if inputs.is_cuda() else loss)
+        return torch.mean(loss.cuda() if inputs.is_cuda else loss)
 
     @staticmethod
     def backward(ctx, grad_output):

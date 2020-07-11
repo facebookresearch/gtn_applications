@@ -15,7 +15,7 @@ class TestTransducer(unittest.TestCase):
         N = 2
         labels = [[0, 0]]
         emissions = torch.FloatTensor([1.0, 0.0, 0.0, 1.0, 1.0,
-                                       0.0]).view(1, T, N)
+                                       0.0]).view(T, 1, N)
         log_probs = torch.log(emissions)
         transducer = Transducer(
             tokens=["a", "b"], graphemes_to_idx={"a": 0, "b": 1}, blank=True)
