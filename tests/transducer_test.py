@@ -13,13 +13,22 @@ class TestTransducer(unittest.TestCase):
     def test_fwd_trivial(self):
         T = 3
         N = 2
-        labels = [[0, 0]]
         emissions = torch.FloatTensor([1.0, 0.0, 0.0, 1.0, 1.0,
                                        0.0]).view(T, 1, N)
         log_probs = torch.log(emissions)
+
+        # Check without blank:
+        labels = [[0, 1, 0]]
         transducer = Transducer(
-            tokens=["a", "b"], graphemes_to_idx={"a": 0, "b": 1}, blank=True)
+            tokens=["a", "b"], graphemes_to_idx={"a": 0, "b": 1})
         self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
+
+        # Check with blank:
+        labels = [[0, 0]]
+        transducer = Transducer(
+            tokens=["a"], graphemes_to_idx={"a": 0}, blank=True)
+        self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
+
 
 #    def test_fwd(self):
 #        T = 3

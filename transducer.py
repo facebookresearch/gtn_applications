@@ -56,7 +56,6 @@ def make_token_graph(token_list, blank=False):
         i = len(token_list)
         graph.add_node(False, True)
         graph.add_arc(0, i + 1, i, gtn.epsilon)
-        graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
         graph.add_arc(i + 1, 0, gtn.epsilon)
     return graph
 
@@ -90,10 +89,16 @@ class TransducerLossFunction(torch.autograd.Function):
             emissions = gtn.linear_graph(T, C, True)
             # TODO, we ought to use data_ptr here and avoid conversions to/from python lists
             emissions.set_weights(inputs[b].cpu().flatten().tolist())
+            target = make_chain_graph(targets[b])
+
+            # Create token to grapheme decomposition graph
+            tokens_target = gtn.remove(
+                gtn.project_input(gtn.compose(target, lexicon)))
 
             # Create alignment graph:
-            target = make_chain_graph(targets[b])
-            alignments = gtn.project_input(gtn.remove(gtn.compose(tokens, target)))
+            alignments = gtn.project_input(
+                gtn.remove(gtn.compose(tokens, tokens_target)))
+
             num = gtn.forward_score(gtn.intersect(emissions, alignments))
             if transitions is not None:
                 denom = gtn.forward_score(gtn.intersect(emissions, transitions))
