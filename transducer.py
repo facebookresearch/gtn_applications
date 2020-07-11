@@ -72,7 +72,7 @@ class Transducer(torch.nn.Module):
         self.transitions = None
 
     def forward(self, inputs, targets):
-        if transitions is None:
+        if self.transitions is None:
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
         inputs = inputs.permute(1, 0, 2).contiguous() # T x B X C ->  B x T x C
         return TransducerLoss(inputs, targets, self.tokens, self.lexicon, self.transitions)
