@@ -1,11 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 import gtn
-import logging
-import numpy as np
-import os
-import struct
-import sys
-import time
 import torch
 
 
@@ -42,36 +36,39 @@ def make_lexicon_graph(word_pieces, graphemes_to_idx):
     return gtn.closure(gtn.sum(lex))
 
 
-def make_token_graph(token_list):
+def make_token_graph(token_list, blank=False):
     """
     Constructs a graph with all the individual
     token transition models.
     """
-    # TODO, consider direct construction as it could be more efficient
-    tokens = []
+    graph = gtn.Graph(False)
+    graph.add_node(True)
     for i, wp in enumerate(token_list):
         # We can consume one or more consecutive
         # word pieces for each emission:
         # E.g. [ab, ab, ab] transduces to [ab]
-        graph = gtn.Graph(False)
-        graph.add_node(True)
+        #graph = gtn.Graph(False)
         graph.add_node(False, True)
-        graph.add_arc(0, 1, i, i)
-        graph.add_arc(1, 1, i, gtn.epsilon)
-        tokens.append(graph)
-    return gtn.closure(gtn.sum(tokens))
+        graph.add_arc(0, i + 1, i)
+        graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
+        graph.add_arc(i + 1, 0, gtn.epsilon)
+    if blank:
+        i = len(token_list)
+        graph.add_node(False, True)
+        graph.add_arc(0, i + 1, i, gtn.epsilon)
+        graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
+        graph.add_arc(i + 1, 0, gtn.epsilon)
+    return graph
 
 
 class Transducer(torch.nn.Module):
 
     def __init__(self, tokens, graphemes_to_idx, n_gram=0, blank=False):
         super(Transducer, self).__init__()
-        self.tokens = make_token_graph(tokens)
-        self.lexicon = make_lexicon_graph(tokens, graphemes_to_id)
+        self.tokens = make_token_graph(tokens, blank=blank)
+        self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         if n_gram > 0:
             raise NotImplementedError("Transition graphs not yet implemented.")
-        if blank:
-            raise NotImplementedError("Blank label not yet supported.")
         self.transitions = None
 
     def forward(self, inputs, targets):

@@ -20,6 +20,9 @@ def parse_args():
     parser.add_argument("--config",
                         type=str,
                         help="A json configuration file for experiment.")
+    parser.add_argument('--disable_cuda',
+                        action='store_true',
+                        help='Disable CUDA')
     parser.add_argument("--use_gtn", action="store_true", help="Use GTN")
     parser.add_argument(
         "--checkpoint_path",
@@ -45,15 +48,16 @@ def parse_args():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    if not torch.cuda.is_available():
-        logging.fatal("No available CUDA devices")
+    use_cpu = args.disable_cuda or not torch.cuda.is_available()
+    if args.world_size > 1 and use_cpu:
+        logging.fatal("CPU distributed training not supported.")
         sys.exit(1)
 
     logging.info(("" if args.use_gtn else "Not ") + "Using GTN")
 
     logging.info("World size is : " + str(args.world_size))
 
-    if torch.cuda.device_count() < args.world_size:
+    if not use_cpu and torch.cuda.device_count() < args.world_size:
         logging.fatal("At least {} cuda devices required. {} found".format(
             args.world_size, torch.cuda.device_count()))
         sys.exit(1)
@@ -81,7 +85,7 @@ class Meters:
         lst = [
             self.loss, self.num_samples, self.num_tokens, self.edit_distance
         ]
-        # TODO: avoid this so that cpu training also works
+        # TODO: avoid this so that distributed cpu training also works
         lst_tensor = torch.FloatTensor(lst).cuda()
         torch.distributed.all_reduce(lst_tensor)
         (
@@ -101,11 +105,11 @@ class Meters:
 
 
 @torch.no_grad()
-def test(model, criterion, data_loader, world_rank, world_size):
+def test(model, criterion, data_loader, device, world_size):
     model.eval()
     meters = Meters()
     for inputs, targets in data_loader:
-        outputs = model(inputs.to(world_rank))
+        outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
         dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
@@ -146,8 +150,11 @@ def train(world_rank, args):
             rank=world_rank,
         )
 
-    # TODO: avoid this so that cpu training also works
-    torch.cuda.set_device(world_rank)
+    if not args.disable_cuda:
+        device = torch.device('cuda')
+        torch.cuda.set_device(world_rank)
+    else:
+        device = torch.device('cpu')
 
     # seed everything:
     seed = config.get("seed", None)
@@ -166,9 +173,6 @@ def train(world_rank, args):
             data_path,
             img_height=input_size,
             tokens_path=config["data"].get("tokens_path"))
-    import pdb
-    pdb.set_trace()
-    # TODO update preprocessor to load tokens from file is specified
     trainset = dataset.Dataset(data_path,
                                preprocessor,
                                split="train",
@@ -183,17 +187,16 @@ def train(world_rank, args):
     if config["criterion"]["blank"]:
          output_size += 1  # account for blank
     model = models.load_model(config["model_type"], input_size, output_size,
-                              config["model"]).to(world_rank)
+                              config["model"]).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     logging.info("Training {} model with {:,} parameters.".format(
         config["model_type"], n_params))
 
     if args.use_gtn:
-        criterion = transducer.Transducer(preprocessor.tokens, preprocess.graphemes)
+        criterion = transducer.Transducer(preprocessor.tokens, preprocessor.graphemes_to_index)
     else:
         criterion = models.CTC(blank=output_size - 1,
-                               use_gtn=args.use_gtn).to(world_rank)
-
+                               use_gtn=args.use_gtn).to(device)
     if is_distributed_train:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[world_rank])
@@ -236,7 +239,7 @@ def train(world_rank, args):
         for inputs, targets in train_loader:
             timers.stop("ds_fetch").start("model_fwd")
             optimizer.zero_grad()
-            outputs = model(inputs.to(world_rank))
+            outputs = model(inputs.to(device))
             timers.stop("model_fwd").start("crit_fwd")
             loss = criterion(outputs, targets)
             timers.stop("crit_fwd").start("bwd")
@@ -267,7 +270,7 @@ def train(world_rank, args):
                     epoch_time), )
             logging.info("Evaluating validation set..")
         timers.start("test_total")
-        val_loss, val_cer = test(model, criterion, val_loader, world_rank,
+        val_loss, val_cer = test(model, criterion, val_loader, device,
                                  args.world_size)
         timers.stop("test_total")
         if world_rank == 0:
