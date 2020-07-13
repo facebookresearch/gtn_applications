@@ -17,12 +17,12 @@ def iamdb_pieces(args):
     num_pieces = args.num_pieces
     sp = train_spm_model(
         (t.replace("|", " ") for t in train_text),
-        num_pieces,
+        num_pieces + 1, # to account for <unk>
         user_symbols=["/"])
     vocab = sorted(set(
         w for t in text for w in t.replace("|", " ").split(" ") if w))
     print(f"Generating word piece list of size {num_pieces}.")
-    pieces = [sp.id_to_piece(i) for i in range(num_pieces)]
+    pieces = [sp.id_to_piece(i) for i in range(1, num_pieces + 1)]
     print(f"Encoding vocabulary of size {len(vocab)}.")
     encoded_vocab = [sp.encode_as_pieces(v) for v in vocab]
 
@@ -41,6 +41,8 @@ def train_spm_model(sentences, vocab_size, user_symbols=None):
         sentence_iterator=sentences,
         model_writer=model,
         vocab_size=vocab_size,
+        bos_id=-1,
+        eos_id=-1,
         character_coverage=1.0,
         user_defined_symbols=user_symbols,
     )
