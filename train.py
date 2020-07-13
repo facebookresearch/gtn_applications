@@ -172,7 +172,8 @@ def train(world_rank, args):
     preprocessor = dataset.Preprocessor(
             data_path,
             img_height=input_size,
-            tokens_path=config["data"].get("tokens_path"))
+            tokens_path=config["data"].get("tokens", None),
+            lexicon_path=config["data"].get("lexicon", None))
     trainset = dataset.Dataset(data_path,
                                preprocessor,
                                split="train",
@@ -195,6 +196,9 @@ def train(world_rank, args):
     if args.use_gtn:
         criterion = transducer.Transducer(preprocessor.tokens, preprocessor.graphemes_to_index)
     else:
+        if not config["criterion"]["blank"]:
+            logging.fatal("CTC requires a blank token.")
+            sys.exit(1)
         criterion = models.CTC(blank=output_size - 1,
                                use_gtn=args.use_gtn).to(device)
     if is_distributed_train:

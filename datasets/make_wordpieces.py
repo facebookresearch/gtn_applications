@@ -1,6 +1,5 @@
 import argparse
 import io
-import logging
 import os
 import sentencepiece as spm
 
@@ -11,26 +10,39 @@ def iamdb_pieces(args):
     with open(os.path.join(args.data_dir, "trainset.txt"), 'r') as fid:
         train = [l.strip() for l in fid]
 
-    text = []
-    for key, lines in forms.items():
-        for line in lines:
-            if line["key"] not in train:
-                continue
-            text.append(line["text"])
-    sp = train_spm_model((t.replace("|", " ") for t in text), args.num_pieces)
-    pieces = [sp.id_to_piece(i) for i in range(sp.vocab_size())]
+    # Train sentencepiece model only on the training set
+    all_lines = [l for _, lines in forms.items() for l in lines]
+    text = [l["text"] for l in all_lines]
+    train_text = [l["text"] for l in all_lines if l["key"] not in train]
+    num_pieces = args.num_pieces
+    sp = train_spm_model(
+        (t.replace("|", " ") for t in train_text),
+        num_pieces,
+        user_symbols=["/"])
+    vocab = sorted(set(
+        w for t in text for w in t.replace("|", " ").split(" ") if w))
+    print(f"Generating word piece list of size {num_pieces}.")
+    pieces = [sp.id_to_piece(i) for i in range(num_pieces)]
+    print(f"Encoding vocabulary of size {len(vocab)}.")
+    encoded_vocab = [sp.encode_as_pieces(v) for v in vocab]
+
     # save pieces to a file
-    with open(args.output, 'w') as fid:
+    with open(args.output_prefix + f"_tokens_{num_pieces}.txt", 'w') as fid:
         fid.write("\n".join(pieces))
+    # save lexicon to a file
+    with open(args.output_prefix + f"_lex_{num_pieces}.txt", 'w') as fid:
+        for v, p in zip(vocab, encoded_vocab):
+            fid.write("{} {}\n".format(v, " ".join(p)))
 
 
-def train_spm_model(sentences, vocab_size):
+def train_spm_model(sentences, vocab_size, user_symbols=None):
     model = io.BytesIO()
     spm.SentencePieceTrainer.train(
         sentence_iterator=sentences,
         model_writer=model,
         vocab_size=vocab_size,
         character_coverage=1.0,
+        user_defined_symbols=user_symbols,
     )
     sp = spm.SentencePieceProcessor(model_proto=model.getvalue())
     return sp
@@ -52,10 +64,10 @@ if __name__ == "__main__":
         type=str,
         help="Name of the dataset.",
     )
-    parser.add_argument("--output",
-         default="word_pieces.txt",
+    parser.add_argument("--output_prefix",
+         default="word_pieces",
          type=str,
-         help="List of word pieces.",
+         help="Prefix path/name to store tokens and lexicon.",
      )
     parser.add_argument("--num_pieces",
          default=1000,
@@ -65,5 +77,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.dataset == "iamdb":
-        logging.info("Building word pieces for IAMDB")
+        print("Building word pieces for IAMDB")
         iamdb_pieces(args)
