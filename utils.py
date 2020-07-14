@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import collections
 import gtn
 import logging
 import numpy as np
@@ -88,6 +89,52 @@ def padding_collate(samples):
 
 
 # A simple timer class inspired from `tnt.TimeMeter`
+class CudaTimer:
+    def __init__(self, keys):
+        self.keys = keys
+        self.reset()
+
+    def start(self, key):
+        s = torch.cuda.Event(enable_timing=True)
+        s.record()
+        self.start_events[key].append(s)
+        return self
+
+    def stop(self, key):
+        e = torch.cuda.Event(enable_timing=True)
+        e.record()
+        self.end_events[key].append(e)
+        return self
+
+    def reset(self):
+        self.start_events = collections.defaultdict(list)
+        self.end_events = collections.defaultdict(list)
+        self.running_times = collections.defaultdict(float)
+        self.n = collections.defaultdict(int)
+        return self
+
+    def value(self):
+        self._synchronize()
+        return {k : self.running_times[k] / self.n[k] for k in self.keys}
+
+    def _synchronize(self):
+        torch.cuda.synchronize()
+        for k in self.keys:
+            starts = self.start_events[k]
+            ends = self.end_events[k]
+            if len(starts) == 0:
+                raise ValueError("Trying to divide by zero in TimeMeter")
+            if len(ends) != len(starts):
+                raise ValueError("Call stop before checking value!")
+            time = 0
+            for start, end in zip(starts, ends):
+                time += start.elapsed_time(end)
+            self.running_times[k] += (time * 1e-3)
+            self.n[k] += len(starts)
+        self.start_events = collections.defaultdict(list)
+        self.end_events = collections.defaultdict(list)
+
+
 # Used to measure the time taken for multiple events
 class Timer:
     def __init__(self, keys):

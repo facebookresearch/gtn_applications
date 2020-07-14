@@ -222,7 +222,8 @@ def train(world_rank, args):
     min_val_loss = float("inf")
     min_val_cer = float("inf")
 
-    timers = utils.Timer([
+    # TODO use regular Timer when running on CPU
+    timers = utils.CudaTimer([
         "ds_fetch",  # dataset sample fetch
         "model_fwd",  # model forward
         "crit_fwd",  # criterion forward
