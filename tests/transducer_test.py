@@ -2,9 +2,11 @@ import sys
 
 sys.path.append("..")
 
-import unittest
-import torch
+import gtn
 import math
+import torch
+import unittest
+
 from transducer import Transducer
 from torch.autograd import gradcheck
 
@@ -152,6 +154,61 @@ class TestTransducer(unittest.TestCase):
 #                                  atol=1e-2))
 #        self.assertTrue(
 #            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
+
+    def test_simple_decomposition(self):
+        T = 5
+        tokens = ["a", "b", "ab", "ba", "aba"]
+        scores = torch.randn((T, 1, len(tokens)), requires_grad=True)
+        labels = [[0, 1, 0]]
+        transducer = Transducer(
+            tokens=tokens, graphemes_to_idx={"a": 0, "b": 1})
+
+        # Hand construct the alignment graph with all of the decompositions
+        alignments = gtn.Graph(False)
+        alignments.add_node(True)
+        # Add the path ['a', 'b', 'a']
+        alignments.add_node()
+        alignments.add_arc(0, 1, 0)
+        alignments.add_arc(1, 1, 0)
+        alignments.add_node()
+        alignments.add_arc(1, 2, 1)
+        alignments.add_arc(2, 2, 1)
+        alignments.add_node(False, True)
+        alignments.add_arc(2, 3, 0)
+        alignments.add_arc(3, 3, 0)
+
+        # Add the path ['a', 'ba']
+        alignments.add_node(False, True)
+        alignments.add_arc(1, 4, 3)
+        alignments.add_arc(4, 4, 3)
+
+        # Add the path ['ab', 'a']
+        alignments.add_node()
+        alignments.add_arc(0, 5, 2)
+        alignments.add_arc(5, 5, 2)
+        alignments.add_arc(5, 3, 0)
+
+        # Add the path ['aba']
+        alignments.add_node(False, True)
+        alignments.add_arc(0, 6, 4)
+        alignments.add_arc(6, 6, 4)
+
+        emissions = gtn.linear_graph(T, len(tokens), True)
+
+        emissions.set_weights(scores.flatten().tolist())
+        expected_loss = gtn.subtract(
+            gtn.forward_score(emissions),
+            gtn.forward_score(gtn.intersect(emissions, alignments)))
+
+        loss = transducer(scores, labels)
+        self.assertAlmostEqual(loss.item(), expected_loss.item(), 5)
+        loss.backward()
+        gtn.backward(expected_loss)
+
+        expected_grad = torch.tensor(emissions.grad().weights())
+        expected_grad = expected_grad.view((T, 1, len(tokens)))
+        self.assertTrue(torch.allclose(
+            scores.grad, expected_grad, rtol=1e-4))
 
 
 if __name__ == "__main__":

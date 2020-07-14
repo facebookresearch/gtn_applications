@@ -95,7 +95,7 @@ class TransducerLossFunction(torch.autograd.Function):
 
             # Create token to grapheme decomposition graph
             tokens_target = gtn.remove(
-                gtn.project_input(gtn.compose(target, lexicon)))
+                gtn.project_output(gtn.compose(target, lexicon)))
 
             # Create alignment graph:
             alignments = gtn.project_input(

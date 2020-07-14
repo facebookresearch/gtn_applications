@@ -222,8 +222,8 @@ def train(world_rank, args):
     min_val_loss = float("inf")
     min_val_cer = float("inf")
 
-    # TODO use regular Timer when running on CPU
-    timers = utils.CudaTimer([
+    Timer = utils.CudaTimer if device.type == "cuda" else utils.Timer
+    timers = Timer([
         "ds_fetch",  # dataset sample fetch
         "model_fwd",  # model forward
         "crit_fwd",  # criterion forward
