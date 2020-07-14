@@ -130,30 +130,6 @@ class TestTransducer(unittest.TestCase):
         )).view(T, 1, N)
         self.assertTrue(log_emissions.grad.allclose(expected_grad))
 
-#    # Jacobian test does not work at fp32 precision
-#    def test_jacobian(self):
-#        T = 20
-#        N = 15
-#        B = 5
-#        tgt = [
-#            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-#            [1, 1],
-#            [0, 2, 3],
-#            [0, 0, 0, 0, 0],
-#            [0, 4, 8, 12],
-#        ]
-#
-#        def fn(input):
-#            return CTCLoss(input, tgt, N - 1)
-#
-#        def fn_mean(input):
-#            return CTCLoss(input, tgt, N - 1, "mean")
-#
-#        inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
-#        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
-#                                  atol=1e-2))
-#        self.assertTrue(
-#            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
 
     def test_simple_decomposition(self):
         T = 5
@@ -166,6 +142,7 @@ class TestTransducer(unittest.TestCase):
         # Hand construct the alignment graph with all of the decompositions
         alignments = gtn.Graph(False)
         alignments.add_node(True)
+
         # Add the path ['a', 'b', 'a']
         alignments.add_node()
         alignments.add_arc(0, 1, 0)

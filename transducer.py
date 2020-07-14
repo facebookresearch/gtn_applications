@@ -12,7 +12,7 @@ def make_chain_graph(sequence):
     graph.add_node(True)
     for i, s in enumerate(sequence):
         graph.add_node(False, i == (len(sequence) - 1))
-        graph.add_arc(i, i + 1, sequence[i])
+        graph.add_arc(i, i + 1, s)
     return graph
 
 
@@ -20,20 +20,16 @@ def make_lexicon_graph(word_pieces, graphemes_to_idx):
     """
     Constructs a graph which transudces letters to word pieces.
     """
-    # TODO, consider direct construction as it could be more efficient
-    lex = []
+    graph = gtn.Graph(False)
+    graph.add_node(True, True)
     for i, wp in enumerate(word_pieces):
-        graph = gtn.Graph(False)
-        graph.add_node(True)
-        for e, l in enumerate(wp):
-            if e == len(wp) - 1:
-                graph.add_node(False, True)
-                graph.add_arc(e, e + 1, graphemes_to_idx[l], i)
-            else:
-                graph.add_node()
-                graph.add_arc(e, e + 1, graphemes_to_idx[l], gtn.epsilon)
-        lex.append(graph)
-    return gtn.closure(gtn.sum(lex))
+        prev = 0
+        for l in wp[:-1]:
+            n = graph.add_node()
+            graph.add_arc(prev, n, graphemes_to_idx[l], gtn.epsilon)
+            prev = n
+        graph.add_arc(prev, 0, graphemes_to_idx[wp[-1]], i)
+    return graph
 
 
 def make_token_graph(token_list, blank=False):
@@ -42,27 +38,43 @@ def make_token_graph(token_list, blank=False):
     token transition models.
     """
     graph = gtn.Graph(False)
-    graph.add_node(True)
+    graph.add_node(True, True)
     for i, wp in enumerate(token_list):
         # We can consume one or more consecutive
         # word pieces for each emission:
         # E.g. [ab, ab, ab] transduces to [ab]
-        #graph = gtn.Graph(False)
-        graph.add_node(False, True)
+        graph.add_node()
         graph.add_arc(0, i + 1, i)
         graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
         graph.add_arc(i + 1, 0, gtn.epsilon)
+
     if blank:
         i = len(token_list)
-        graph.add_node(False, True)
+        graph.add_node()
         graph.add_arc(0, i + 1, i, gtn.epsilon)
         graph.add_arc(i + 1, 0, gtn.epsilon)
+
+#    if not allow_repeats:
+#        repeat_filter = gtn.Graph(False)
+#        for i in enumerate(token_list):
+#            gtn.add_node(True, True)
+#            gtn.add_node(False, True)
+#            gtn.add_arc(2 * i, 2 * i + 1, i)
+#        for i in enumerate(token_list):
+#            for j in enumerate(token_list):
+#                gtn.add_arc(2 * i + 1, j, j)
+
     return graph
 
 
 class Transducer(torch.nn.Module):
 
-    def __init__(self, tokens, graphemes_to_idx, n_gram=0, blank=False):
+    def __init__(
+            self,
+            tokens,
+            graphemes_to_idx,
+            n_gram=0,
+            blank=False):
         super(Transducer, self).__init__()
         self.tokens = make_token_graph(tokens, blank=blank)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
@@ -74,7 +86,12 @@ class Transducer(torch.nn.Module):
         if self.transitions is None:
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
         inputs = inputs.permute(1, 0, 2).contiguous() # T x B X C ->  B x T x C
-        return TransducerLoss(inputs, targets, self.tokens, self.lexicon, self.transitions)
+        return TransducerLoss(
+            inputs,
+            targets,
+            self.tokens,
+            self.lexicon,
+            self.transitions)
 
 
 class TransducerLossFunction(torch.autograd.Function):
@@ -122,8 +139,6 @@ class TransducerLossFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        # We need another multiproc fn.
-        # We call loss backward and extract gradients w.r.t. the emission and transition
         losses, emissions_graphs, transitions_graphs = ctx.graphs
         B = len(emissions_graphs)
         T = emissions_graphs[0].num_nodes() - 1
