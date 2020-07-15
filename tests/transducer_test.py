@@ -31,6 +31,12 @@ class TestTransducer(unittest.TestCase):
             tokens=["a"], graphemes_to_idx={"a": 0}, blank=True)
         self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
 
+        # Check with repeats not allowed:
+        labels = [[0, 0]]
+        transducer = Transducer(
+            tokens=["a"], graphemes_to_idx={"a": 0}, blank=True, allow_repeats=False)
+        self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
+
 
     def test_fwd(self):
         T = 3
@@ -185,7 +191,7 @@ class TestTransducer(unittest.TestCase):
         expected_grad = torch.tensor(emissions.grad().weights())
         expected_grad = expected_grad.view((T, 1, len(tokens)))
         self.assertTrue(torch.allclose(
-            scores.grad, expected_grad, rtol=1e-4))
+            scores.grad, expected_grad, rtol=1e-4, atol=1e-5))
 
 
 if __name__ == "__main__":

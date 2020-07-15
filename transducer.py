@@ -44,7 +44,7 @@ def make_token_graph(token_list, blank=False, allow_repeats=True):
         # We can consume one or more consecutive
         # word pieces for each emission:
         # E.g. [ab, ab, ab] transduces to [ab]
-        graph.add_node()
+        graph.add_node(False, True)
         graph.add_arc(0, i + 1, i)
         graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
         if allow_repeats:
@@ -53,8 +53,8 @@ def make_token_graph(token_list, blank=False, allow_repeats=True):
     if blank:
         graph.add_node()
         # blank index is assumed to be last (ntoks)
-        graph.add_arc(0, i + 1, ntoks, gtn.epsilon)
-        graph.add_arc(i + 1, 0, gtn.epsilon)
+        graph.add_arc(0, ntoks + 1, ntoks, gtn.epsilon)
+        graph.add_arc(ntoks + 1, 0, gtn.epsilon)
 
     if not allow_repeats:
         if not blank:
@@ -62,11 +62,11 @@ def make_token_graph(token_list, blank=False, allow_repeats=True):
         # For each token, allow a transition on blank or a transition on all
         # other tokens.
         for i in range(ntoks):
-            gtn.add_arc(i + 1, ntoks + 1, ntoks, gtn.epsilon)
+            graph.add_arc(i + 1, ntoks + 1, ntoks, gtn.epsilon)
             for j in range(ntoks):
                 if i != j:
-                    gtn.add_arc(i + 1, j + 1, j, j)
-    gtn.draw(graph, "noreps.pdf")
+                    graph.add_arc(i + 1, j + 1, j, j)
+
     return graph
 
 
@@ -77,9 +77,11 @@ class Transducer(torch.nn.Module):
             tokens,
             graphemes_to_idx,
             n_gram=0,
-            blank=False):
+            blank=False,
+            allow_repeats=True):
         super(Transducer, self).__init__()
-        self.tokens = make_token_graph(tokens, blank=blank)
+        self.tokens = make_token_graph(
+            tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         if n_gram > 0:
             raise NotImplementedError("Transition graphs not yet implemented.")
