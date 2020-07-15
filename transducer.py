@@ -32,38 +32,41 @@ def make_lexicon_graph(word_pieces, graphemes_to_idx):
     return graph
 
 
-def make_token_graph(token_list, blank=False):
+def make_token_graph(token_list, blank=False, allow_repeats=True):
     """
     Constructs a graph with all the individual
     token transition models.
     """
+    ntoks = len(token_list)
     graph = gtn.Graph(False)
     graph.add_node(True, True)
-    for i, wp in enumerate(token_list):
+    for i in range(ntoks):
         # We can consume one or more consecutive
         # word pieces for each emission:
         # E.g. [ab, ab, ab] transduces to [ab]
         graph.add_node()
         graph.add_arc(0, i + 1, i)
         graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
-        graph.add_arc(i + 1, 0, gtn.epsilon)
+        if allow_repeats:
+            graph.add_arc(i + 1, 0, gtn.epsilon)
 
     if blank:
-        i = len(token_list)
         graph.add_node()
-        graph.add_arc(0, i + 1, i, gtn.epsilon)
+        # blank index is assumed to be last (ntoks)
+        graph.add_arc(0, i + 1, ntoks, gtn.epsilon)
         graph.add_arc(i + 1, 0, gtn.epsilon)
 
-#    if not allow_repeats:
-#        repeat_filter = gtn.Graph(False)
-#        for i in enumerate(token_list):
-#            gtn.add_node(True, True)
-#            gtn.add_node(False, True)
-#            gtn.add_arc(2 * i, 2 * i + 1, i)
-#        for i in enumerate(token_list):
-#            for j in enumerate(token_list):
-#                gtn.add_arc(2 * i + 1, j, j)
-
+    if not allow_repeats:
+        if not blank:
+            raise ValueError("Must use blank if disallowing repeats.")
+        # For each token, allow a transition on blank or a transition on all
+        # other tokens.
+        for i in range(ntoks):
+            gtn.add_arc(i + 1, ntoks + 1, ntoks, gtn.epsilon)
+            for j in range(ntoks):
+                if i != j:
+                    gtn.add_arc(i + 1, j + 1, j, j)
+    gtn.draw(graph, "noreps.pdf")
     return graph
 
 
