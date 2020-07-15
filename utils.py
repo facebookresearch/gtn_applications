@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 import gtn
 import logging
 import numpy as np
@@ -85,6 +86,36 @@ def padding_collate(samples):
         batch_inputs[e, :, :ip.shape[2]] = ip
 
     return batch_inputs, targets
+
+
+@dataclass
+class Meters:
+    loss = 0.0
+    num_samples = 0
+    num_tokens = 0
+    edit_distance = 0
+
+    def sync(self):
+        lst = [
+            self.loss, self.num_samples, self.num_tokens, self.edit_distance
+        ]
+        # TODO: avoid this so that distributed cpu training also works
+        lst_tensor = torch.FloatTensor(lst).cuda()
+        torch.distributed.all_reduce(lst_tensor)
+        (
+            self.loss,
+            self.num_samples,
+            self.num_tokens,
+            self.edit_distance,
+        ) = lst_tensor.tolist()
+
+    @property
+    def avg_loss(self):
+        return self.loss / self.num_samples
+
+    @property
+    def cer(self):
+        return self.edit_distance / self.num_tokens
 
 
 # A simple timer class inspired from `tnt.TimeMeter`
