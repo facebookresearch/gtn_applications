@@ -1,5 +1,4 @@
 import argparse
-from dataclasses import dataclass
 import editdistance
 import json
 import logging
@@ -65,54 +64,25 @@ def parse_args():
     return args
 
 
-def compute_edit_distance(predictions, targets):
+def compute_edit_distance(predictions, targets, preprocessor):
     dist = 0
     n_tokens = 0
     for p, t in zip(predictions, targets):
-        dist += editdistance.eval(p.tolist(), t.tolist())
-        n_tokens += t.numel()
+        p, t = preprocessor.to_text(p), preprocessor.to_text(t)
+        dist += editdistance.eval(p, t)
+        n_tokens += len(t)
     return dist, n_tokens
-
-
-@dataclass
-class Meters:
-    loss = 0.0
-    num_samples = 0
-    num_tokens = 0
-    edit_distance = 0
-
-    def sync(self):
-        lst = [
-            self.loss, self.num_samples, self.num_tokens, self.edit_distance
-        ]
-        # TODO: avoid this so that distributed cpu training also works
-        lst_tensor = torch.FloatTensor(lst).cuda()
-        torch.distributed.all_reduce(lst_tensor)
-        (
-            self.loss,
-            self.num_samples,
-            self.num_tokens,
-            self.edit_distance,
-        ) = lst_tensor.tolist()
-
-    @property
-    def avg_loss(self):
-        return self.loss / self.num_samples
-
-    @property
-    def cer(self):
-        return self.edit_distance / self.num_tokens
 
 
 @torch.no_grad()
 def test(model, criterion, data_loader, device, world_size):
     model.eval()
-    meters = Meters()
+    meters = utils.Meters()
     for inputs, targets in data_loader:
         outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
-        dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
+        dist, toks = compute_edit_distance(criterion.decode(outputs), targets, data_loader.preprocessor)
         meters.edit_distance += dist
         meters.num_tokens += toks
     if world_size > 1:
@@ -238,7 +208,7 @@ def train(world_rank, args):
         model.train()
         criterion.train()
         start_time = time.time()
-        meters = Meters()
+        meters = utils.Meters()
         timers.reset()
         timers.start("train_total").start("ds_fetch")
         for inputs, targets in train_loader:
@@ -259,7 +229,8 @@ def train(world_rank, args):
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
             dist, toks = compute_edit_distance(criterion.decode(outputs),
-                                               targets)
+                                               targets,
+                                               preprocessor)
             meters.edit_distance += dist
             meters.num_tokens += toks
             timers.stop("metrics").start("ds_fetch")
