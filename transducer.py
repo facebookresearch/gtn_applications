@@ -124,13 +124,20 @@ class Transducer(torch.nn.Module):
             emissions.set_weights(
                 outputs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
             )
-
-            path = gtn.remove(gtn.compose(
-                gtn.viterbi_path(emissions), self.tokens))
+            if self.transitions is not None:
+                full_graph = gtn.intersect(emissions, transitions)
+            else:
+                full_graph = emissions
+            # Left compose the viterbi path with the "alignment to token"
+            # transducer to get the outputs:
+            path = gtn.compose(gtn.viterbi_path(full_graph), self.tokens)
+            # When there are ambiguous paths (allow_repeats is true), we take
+            # the shortest:
+            path = gtn.viterbi_path(path)
+            path = gtn.remove(gtn.project_output(path))
             return path.labels_to_list()
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-
         futures = [executor.submit(process, b) for b in range(B)]
         predictions = [torch.IntTensor(f.result()) for f in futures]
         executor.shutdown()
