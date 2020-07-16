@@ -307,8 +307,7 @@ class ASG(torch.nn.Module):
                 self.transitions
             )
             g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
-            for a in range(g_path.num_arcs()):
-                prediction.append(g_path.ilabel(a))
+            prediction = g_path.labels_to_list()
             return [x[0] for x in groupby(prediction)]
 
         collapsed_predictions = []
