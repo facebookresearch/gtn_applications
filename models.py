@@ -269,7 +269,7 @@ class CTC(torch.nn.Module):
                 log_probs, targets, input_lengths, target_lengths, blank=self.blank
             )
 
-    def decode(self, outputs):
+    def viterbi(self, outputs):
         predictions = torch.argmax(outputs, dim=2).T.to("cpu")
         collapsed_predictions = []
         for pred in predictions.split(1):
@@ -290,7 +290,7 @@ class ASG(torch.nn.Module):
     def forward(self, inputs, targets):
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
-    def decode(self, outputs):
+    def viterbi(self, outputs):
         B, T, C = outputs.shape
         assert C == self.num_classes
 

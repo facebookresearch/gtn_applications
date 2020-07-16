@@ -82,7 +82,7 @@ def test(model, criterion, data_loader, preprocessor, device, world_size):
         outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
-        dist, toks = compute_edit_distance(criterion.decode(outputs), targets, preprocessor)
+        dist, toks = compute_edit_distance(criterion.viterbi(outputs), targets, preprocessor)
         meters.edit_distance += dist
         meters.num_tokens += toks
     if world_size > 1:
@@ -203,7 +203,7 @@ def train(world_rank, args):
         "crit_fwd",  # criterion forward
         "bwd",  # backward (model + criterion)
         "optim",  # optimizer step
-        "metrics",  # decode, cer
+        "metrics",  # viterbi, cer
         "train_total",  # total training
         "test_total",  # total testing
     ])
@@ -232,7 +232,7 @@ def train(world_rank, args):
             timers.stop("optim").start("metrics")
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
-            dist, toks = compute_edit_distance(criterion.decode(outputs),
+            dist, toks = compute_edit_distance(criterion.viterbi(outputs),
                                                targets,
                                                preprocessor)
             meters.edit_distance += dist

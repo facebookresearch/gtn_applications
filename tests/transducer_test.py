@@ -223,5 +223,42 @@ class TestTransducer(unittest.TestCase):
             gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
 
 
+    def test_viterbi(self):
+        T = 5
+        N = 4
+        B = 2
+
+        labels = [[1, 3, 0], [3, 2, 3, 2, 3]]
+        labels_with_blank = [[1, 0], [2, 2]]
+        # fmt: off
+        emissions1 = torch.tensor((
+            0, 4, 0, 1,
+            0, 2, 1, 1,
+            0, 0, 0, 2,
+            0, 0, 0, 2,
+            8, 0, 0, 2,
+            ),
+            dtype=torch.float,
+        ).view(T, N)
+        emissions2 = torch.tensor((
+            0, 2, 1, 7,
+            0, 2, 9, 1,
+            0, 0, 0, 2,
+            0, 0, 5, 2,
+            1, 0, 0, 2,
+            ),
+            dtype=torch.float,
+        ).view(T, N)
+        # fmt: on
+        transducer = Transducer(
+            tokens=["a", "b", "c", "d"],
+            graphemes_to_idx={"a": 0, "b": 1, "c": 2, "d": 3},
+            blank=False,
+        )
+
+        emissions = torch.stack([emissions1, emissions2], dim=0)
+        predictions = transducer.viterbi(emissions)
+
+
 if __name__ == "__main__":
     unittest.main()

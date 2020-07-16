@@ -115,7 +115,7 @@ class Transducer(torch.nn.Module):
             self.lexicon,
             self.transitions)
 
-    def decode(self, outputs):
+    def viterbi(self, outputs):
         B, T, C = outputs.shape
 
         def process(b):
@@ -126,23 +126,15 @@ class Transducer(torch.nn.Module):
             )
 
             path = gtn.remove(gtn.compose(
-                gtn.viterbi_path(emissions), self.tokens)
-            for a in range(path.num_arcs()):
-                prediction.append(path.ilabel(a))
-            return [x[0] for x in groupby(prediction)]
+                gtn.viterbi_path(emissions), self.tokens))
+            return path.labels_to_list()
 
-        collapsed_predictions = []
-        executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
+        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
+
         futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            prediction = torch.Tensor(f.result())
-            if outputs.is_cuda:
-                prediction = prediction.cuda()
-            collapsed_predictions.append(prediction)
+        predictions = [torch.IntTensor(f.result()) for f in futures]
         executor.shutdown()
-
-        return collapsed_predictions
-
+        return predictions
 
 
 class TransducerLossFunction(torch.autograd.Function):
