@@ -111,8 +111,7 @@ class TransducerLossFunction(torch.autograd.Function):
         def process(b):
             # Create emissions graph:
             emissions = gtn.linear_graph(T, C, inputs.requires_grad)
-            # TODO, we ought to use data_ptr here and avoid conversions to/from python lists
-            emissions.set_weights(inputs[b].cpu().flatten().tolist())
+            emissions.set_weights(inputs[b].cpu().data_ptr())
             target = make_chain_graph(targets[b])
 
             # Create token to grapheme decomposition graph
@@ -162,7 +161,7 @@ class TransducerLossFunction(torch.autograd.Function):
             emissions = emissions_graphs[b]
             transitions = transitions_graphs[b]
             if calc_emissions:
-                grad = emissions.grad().weights()
+                grad = emissions.grad().weights_to_numpy()
                 input_grad[b] = torch.tensor(grad).view(1, T, C)
             if calc_transitions:
                 raise NotImplementedError("Transitions not implemented yet.")

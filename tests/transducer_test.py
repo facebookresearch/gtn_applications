@@ -176,7 +176,7 @@ class TestTransducer(unittest.TestCase):
         loss.backward()
         gtn.backward(expected_loss)
 
-        expected_grad = torch.tensor(emissions.grad().weights())
+        expected_grad = torch.tensor(emissions.grad().weights_to_numpy())
         expected_grad = expected_grad.view((T, 1, len(tokens)))
         self.assertTrue(
             torch.allclose(scores.grad, expected_grad, rtol=1e-4, atol=1e-5)
