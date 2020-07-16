@@ -4,10 +4,11 @@
     "dataset" : "iamdb",
     "data_path" : "/datasets01/iamdb/060820/",
     "img_height" : 64,
-    "tokens_path" : "/checkpoint/awni/data/iamdb/word_pieces.txt"
+    "tokens_path" : "/checkpoint/awni/data/iamdb/word_pieces_100.txt"
   },
   "criterion" : {
-    "blank" : false
+    "blank" : false,
+    "allow_repeats" : true
   },
   "model_type" : "tds2d",
   "model" : {

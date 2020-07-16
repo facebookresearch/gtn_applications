@@ -115,6 +115,35 @@ class Transducer(torch.nn.Module):
             self.lexicon,
             self.transitions)
 
+    def decode(self, outputs):
+        B, T, C = outputs.shape
+
+        def process(b):
+            prediction = []
+            emissions = gtn.linear_graph(T, C, False)
+            emissions.set_weights(
+                outputs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
+            )
+
+            path = gtn.remove(gtn.compose(
+                gtn.viterbi_path(emissions), self.tokens)
+            for a in range(path.num_arcs()):
+                prediction.append(path.ilabel(a))
+            return [x[0] for x in groupby(prediction)]
+
+        collapsed_predictions = []
+        executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
+        futures = [executor.submit(process, b) for b in range(B)]
+        for f in futures:
+            prediction = torch.Tensor(f.result())
+            if outputs.is_cuda:
+                prediction = prediction.cuda()
+            collapsed_predictions.append(prediction)
+        executor.shutdown()
+
+        return collapsed_predictions
+
+
 
 class TransducerLossFunction(torch.autograd.Function):
 

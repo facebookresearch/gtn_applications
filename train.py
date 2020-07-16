@@ -75,14 +75,14 @@ def compute_edit_distance(predictions, targets, preprocessor):
 
 
 @torch.no_grad()
-def test(model, criterion, data_loader, device, world_size):
+def test(model, criterion, data_loader, preprocessor, device, world_size):
     model.eval()
     meters = utils.Meters()
     for inputs, targets in data_loader:
         outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
-        dist, toks = compute_edit_distance(criterion.decode(outputs), targets, data_loader.preprocessor)
+        dist, toks = compute_edit_distance(criterion.decode(outputs), targets, preprocessor)
         meters.edit_distance += dist
         meters.num_tokens += toks
     if world_size > 1:
@@ -164,7 +164,11 @@ def train(world_rank, args):
         config["model_type"], n_params))
 
     if args.use_gtn:
-        criterion = transducer.Transducer(preprocessor.tokens, preprocessor.graphemes_to_index)
+        criterion = transducer.Transducer(
+            preprocessor.tokens,
+            preprocessor.graphemes_to_index,
+            balnk=config["criterion"]["blank"],
+            allow_repeats=config["criterion"]["allow_repeats"])
     else:
         if not config["criterion"]["blank"]:
             logging.fatal("CTC requires a blank token.")
@@ -246,8 +250,8 @@ def train(world_rank, args):
                     epoch_time), )
             logging.info("Evaluating validation set..")
         timers.start("test_total")
-        val_loss, val_cer = test(model, criterion, val_loader, device,
-                                 args.world_size)
+        val_loss, val_cer = test(model, criterion, val_loader, preprocessor,
+                                 device, args.world_size)
         timers.stop("test_total")
         if world_rank == 0:
             checkpoint(model, criterion, args.checkpoint_path,
