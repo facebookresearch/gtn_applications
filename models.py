@@ -1,10 +1,12 @@
-import torch
+from concurrent.futures import ThreadPoolExecutor
+import gtn
+from itertools import groupby
 import numpy as np
-from utils import CTCLoss
+import torch
+import utils
 
 
 class TDSBlock2d(torch.nn.Module):
-
     def __init__(self, in_channels, img_depth, kernel_size, dropout):
         super(TDSBlock2d, self).__init__()
         self.in_channels = in_channels
@@ -27,10 +29,12 @@ class TDSBlock2d(torch.nn.Module):
             torch.nn.Linear(fc_size, fc_size),
             torch.nn.Dropout(dropout),
         )
-        self.instance_norms = torch.nn.ModuleList([
-            torch.nn.InstanceNorm2d(fc_size, affine=True),
-            torch.nn.InstanceNorm2d(fc_size, affine=True),
-        ])
+        self.instance_norms = torch.nn.ModuleList(
+            [
+                torch.nn.InstanceNorm2d(fc_size, affine=True),
+                torch.nn.InstanceNorm2d(fc_size, affine=True),
+            ]
+        )
 
     def forward(self, inputs):
         # inputs shape: [B, CD, H, W]
@@ -47,37 +51,41 @@ class TDSBlock2d(torch.nn.Module):
 
 
 class TDS2d(torch.nn.Module):
-
     def __init__(
-            self, input_size, output_size, depth, tds_groups, kernel_size, dropout):
+        self, input_size, output_size, depth, tds_groups, kernel_size, dropout
+    ):
         super(TDS2d, self).__init__()
         # downsample layer -> TDS2d group -> ... -> Linear output layer
         modules = []
         in_channels = 1
         stride_h = np.prod([grp["stride"][0] for grp in tds_groups])
-        assert input_size % stride_h == 0, \
-            f"Image height not divisible by total stride {stride_h}."
+        assert (
+            input_size % stride_h == 0
+        ), f"Image height not divisible by total stride {stride_h}."
         for tds_group in tds_groups:
             # add downsample layer:
             out_channels = depth * tds_group["channels"]
-            modules.extend([
-                torch.nn.Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=kernel_size,
-                    padding=(kernel_size[0] // 2, kernel_size[1] // 2),
-                    stride=tds_group["stride"]),
-                torch.nn.ReLU(),
-                torch.nn.Dropout(dropout),
-                torch.nn.InstanceNorm2d(out_channels, affine=True),
-            ])
+            modules.extend(
+                [
+                    torch.nn.Conv2d(
+                        in_channels=in_channels,
+                        out_channels=out_channels,
+                        kernel_size=kernel_size,
+                        padding=(kernel_size[0] // 2, kernel_size[1] // 2),
+                        stride=tds_group["stride"],
+                    ),
+                    torch.nn.ReLU(),
+                    torch.nn.Dropout(dropout),
+                    torch.nn.InstanceNorm2d(out_channels, affine=True),
+                ]
+            )
             for _ in range(tds_group["num_blocks"]):
-                modules.append(TDSBlock2d(
-                    tds_group["channels"], depth, kernel_size, dropout))
+                modules.append(
+                    TDSBlock2d(tds_group["channels"], depth, kernel_size, dropout)
+                )
             in_channels = out_channels
         self.tds = torch.nn.Sequential(*modules)
-        self.linear = torch.nn.Linear(
-            in_channels * input_size // stride_h, output_size)
+        self.linear = torch.nn.Linear(in_channels * input_size // stride_h, output_size)
 
     def forward(self, inputs):
         # inputs shape: [B, H, W]
@@ -93,7 +101,6 @@ class TDS2d(torch.nn.Module):
 
 
 class TDSBlock(torch.nn.Module):
-
     def __init__(self, in_channels, img_height, kernel_size, dropout):
         super(TDSBlock, self).__init__()
         self.in_channels = in_channels
@@ -116,10 +123,12 @@ class TDSBlock(torch.nn.Module):
             torch.nn.Linear(fc_size, fc_size),
             torch.nn.Dropout(dropout),
         )
-        self.instance_norms = torch.nn.ModuleList([
-            torch.nn.InstanceNorm1d(fc_size, affine=True),
-            torch.nn.InstanceNorm1d(fc_size, affine=True),
-        ])
+        self.instance_norms = torch.nn.ModuleList(
+            [
+                torch.nn.InstanceNorm1d(fc_size, affine=True),
+                torch.nn.InstanceNorm1d(fc_size, affine=True),
+            ]
+        )
 
     def forward(self, inputs):
         # inputs shape: [B, C * H, W]
@@ -136,9 +145,7 @@ class TDSBlock(torch.nn.Module):
 
 
 class TDS(torch.nn.Module):
-
-    def __init__(
-            self, input_size, output_size, tds_groups, kernel_size, dropout):
+    def __init__(self, input_size, output_size, tds_groups, kernel_size, dropout):
         super(TDS, self).__init__()
         # TODO might be worth adding a 2D front-end or changing TDS to be a grouped conv
         # downsample layer -> TDS group -> ... -> Linear output layer
@@ -147,20 +154,24 @@ class TDS(torch.nn.Module):
         for tds_group in tds_groups:
             # add downsample layer:
             out_channels = input_size * tds_group["channels"]
-            modules.extend([
-                torch.nn.Conv1d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=kernel_size,
-                    padding=kernel_size // 2,
-                    stride=2),
-                torch.nn.ReLU(),
-                torch.nn.Dropout(dropout),
-                torch.nn.InstanceNorm1d(out_channels, affine=True),
-            ])
+            modules.extend(
+                [
+                    torch.nn.Conv1d(
+                        in_channels=in_channels,
+                        out_channels=out_channels,
+                        kernel_size=kernel_size,
+                        padding=kernel_size // 2,
+                        stride=2,
+                    ),
+                    torch.nn.ReLU(),
+                    torch.nn.Dropout(dropout),
+                    torch.nn.InstanceNorm1d(out_channels, affine=True),
+                ]
+            )
             for _ in range(tds_group["num_blocks"]):
-                modules.append(TDSBlock(
-                    tds_group["channels"], input_size, kernel_size, dropout))
+                modules.append(
+                    TDSBlock(tds_group["channels"], input_size, kernel_size, dropout)
+                )
             in_channels = out_channels
         self.tds = torch.nn.Sequential(*modules)
         self.linear = torch.nn.Linear(in_channels, output_size)
@@ -173,29 +184,35 @@ class TDS(torch.nn.Module):
 
 
 class RNN(torch.nn.Module):
-
     def __init__(
-            self, input_size, output_size, cell_type,
-            hidden_size, num_layers,
-            dropout=0.0, bidirectional=False,
-            channels=[8, 8],
-            kernel_sizes=[[5, 5], [5, 5]],
-            strides=[[2, 2], [2, 2]]
-            ):
+        self,
+        input_size,
+        output_size,
+        cell_type,
+        hidden_size,
+        num_layers,
+        dropout=0.0,
+        bidirectional=False,
+        channels=[8, 8],
+        kernel_sizes=[[5, 5], [5, 5]],
+        strides=[[2, 2], [2, 2]],
+    ):
         super(RNN, self).__init__()
 
         # convolutional front-end:
         convs = []
         in_channels = 1
-        for out_channels, kernel, stride in zip(
-                channels, kernel_sizes, strides):
+        for out_channels, kernel, stride in zip(channels, kernel_sizes, strides):
             padding = (kernel[0] // 2, kernel[1] // 2)
-            convs.append(torch.nn.Conv2d(
-                in_channels=in_channels,
-                out_channels=out_channels,
-                kernel_size=kernel,
-                stride=stride,
-                padding=padding))
+            convs.append(
+                torch.nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel,
+                    stride=stride,
+                    padding=padding,
+                )
+            )
             convs.append(torch.nn.ReLU())
             if dropout > 0:
                 convs.append(torch.nn.Dropout(dropout))
@@ -211,9 +228,11 @@ class RNN(torch.nn.Module):
             hidden_size=hidden_size,
             num_layers=num_layers,
             dropout=dropout,
-            bidirectional=bidirectional)
+            bidirectional=bidirectional,
+        )
         self.linear = torch.nn.Linear(
-            hidden_size + bidirectional * hidden_size, output_size)
+            hidden_size + bidirectional * hidden_size, output_size
+        )
 
     def forward(self, inputs):
         # inputs shape: [batch size, img height (e.g. input size), img width (e.g. sequence length)]
@@ -221,7 +240,7 @@ class RNN(torch.nn.Module):
         outputs = inputs.unsqueeze(1)
         outputs = self.convs(outputs)
         b, c, h, w = outputs.shape
-        outputs = outputs.reshape(b, c*h, w)
+        outputs = outputs.reshape(b, c * h, w)
 
         outputs = outputs.permute(2, 0, 1)
         outputs, _ = self.rnn(outputs)
@@ -229,7 +248,7 @@ class RNN(torch.nn.Module):
 
 
 class CTC(torch.nn.Module):
-    def __init__(self, blank=0, use_gtn = False):
+    def __init__(self, blank=0, use_gtn=False):
         super(CTC, self).__init__()
         self.blank = blank
         self.use_gtn = use_gtn
@@ -238,15 +257,17 @@ class CTC(torch.nn.Module):
         input_lengths = [inputs.shape[0]] * inputs.shape[1]
         target_lengths = [t.numel() for t in targets]
         log_probs = torch.nn.functional.log_softmax(inputs, dim=2)
-        
+
         if self.use_gtn:
-            log_probs = log_probs.permute(1, 0, 2).contiguous() # T x B X C ->  B x T x C
-            return CTCLoss(log_probs, targets, self.blank, 'mean')
+            log_probs = log_probs.permute(
+                1, 0, 2
+            ).contiguous()  # T x B X C ->  B x T x C
+            return utils.CTCLoss(log_probs, targets, self.blank, "mean")
         else:
             targets = torch.cat(targets)
             return torch.nn.functional.ctc_loss(
-                log_probs, targets, input_lengths, target_lengths,
-                blank=self.blank)
+                log_probs, targets, input_lengths, target_lengths, blank=self.blank
+            )
 
     def decode(self, outputs):
         predictions = torch.argmax(outputs, dim=2).T.to("cpu")
@@ -257,6 +278,49 @@ class CTC(torch.nn.Module):
             pred = torch.cat([pred[0:1], pred[1:][mask]])
             pred = pred[pred != self.blank]
             collapsed_predictions.append(pred)
+        return collapsed_predictions
+
+
+class ASG(torch.nn.Module):
+    def __init__(self, num_classes):
+        super(ASG, self).__init__()
+        self.num_classes = num_classes
+        self.transitions = torch.nn.Parameter(torch.zeros(num_classes + 1, num_classes))
+
+    def forward(self, inputs, targets):
+        return utils.ASGLoss(inputs, self.transitions, targets, "mean")
+
+    def decode(self, outputs):
+        B, T, C = outputs.shape
+        assert C == self.num_classes
+
+        def process(b):
+            prediction = []
+            # create emission graph
+            g_emissions = gtn.linear_graph(T, C, False)
+            g_emissions.set_weights(
+                outputs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
+            )
+
+            # create transition graph
+            g_transitions = utils.ASGLossFunction.create_transitions_graph(
+                self.transitions
+            )
+            g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
+            for a in range(g_path.num_arcs()):
+                prediction.append(g_path.ilabel(a))
+            return [x[0] for x in groupby(prediction)]
+
+        collapsed_predictions = []
+        executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
+        futures = [executor.submit(process, b) for b in range(B)]
+        for f in futures:
+            prediction = torch.Tensor(f.result())
+            if outputs.is_cuda:
+                prediction = prediction.cuda()
+            collapsed_predictions.append(prediction)
+        executor.shutdown()
+
         return collapsed_predictions
 
 

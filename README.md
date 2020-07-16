@@ -37,6 +37,13 @@ Single GPU training can be run with:
 python train.py --config configs/iamdb_tds2d.json
 ```
 
+To run distributed training with multiple GPUs:
+```
+python train.py --config configs/iamdb_tds2d.json --world_size <NUM_GPUS>
+```
+
+Set the environment variable `PYTHONGIL=0` when using criterion implemented using GTNs. This gives better performance for multithreading. 
+
 For a list of options type:
 ```
 python train.py -h

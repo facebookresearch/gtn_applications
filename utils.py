@@ -21,9 +21,9 @@ def data_loader(dataset, config, world_rank, world_size):
         dataset = Subset(dataset, torch.randperm(len(dataset))[:num_samples])
     return torch.utils.data.DataLoader(
         dataset,
-        batch_sampler=BatchSortedSampler(dataset,
-                                         config["optim"]["batch_size"],
-                                         world_rank, world_size),
+        batch_sampler=BatchSortedSampler(
+            dataset, config["optim"]["batch_size"], world_rank, world_size
+        ),
         collate_fn=padding_collate,
         num_workers=1,
     )
@@ -44,25 +44,19 @@ class Subset(torch.utils.data.Subset):
 
 
 class BatchSortedSampler(torch.utils.data.Sampler):
-    def __init__(self,
-                 dataset,
-                 batch_size,
-                 world_rank,
-                 world_size,
-                 shuffle=True):
+    def __init__(self, dataset, batch_size, world_rank, world_size, shuffle=True):
         local_batchsize = batch_size // world_size
         widths = (in_size[0] for in_size, _ in dataset.sample_sizes())
         sorted_dataset = sorted(enumerate(widths), key=lambda x: x[1])
         sorted_indices, _ = zip(*sorted_dataset)
         global_batches = [
-            sorted_indices[idx:idx + local_batchsize]
+            sorted_indices[idx : idx + local_batchsize]
             for idx in range(0, len(sorted_indices), local_batchsize)
         ]
         self.length = len(global_batches) // world_size
         # distribute the sample across the ranks
         self.batches = [
-            global_batches[world_rank + i * world_size]
-            for i in range(self.length)
+            global_batches[world_rank + i * world_size] for i in range(self.length)
         ]
         self.shuffle = shuffle
 
@@ -80,10 +74,9 @@ def padding_collate(samples):
     # collate inputs:
     h = inputs[0].shape[1]
     max_input_len = max(ip.shape[2] for ip in inputs)
-    batch_inputs = torch.zeros(
-        (len(inputs), inputs[0].shape[1], max_input_len))
+    batch_inputs = torch.zeros((len(inputs), inputs[0].shape[1], max_input_len))
     for e, ip in enumerate(inputs):
-        batch_inputs[e, :, :ip.shape[2]] = ip
+        batch_inputs[e, :, : ip.shape[2]] = ip
 
     return batch_inputs, targets
 
@@ -173,69 +166,232 @@ class Timer:
 
 class CTCLossFunction(torch.autograd.Function):
     @staticmethod
+    def create_ctc_graph(target, blank_idx):
+        g_criterion = gtn.Graph(False)
+        L = len(target)
+        S = 2 * L + 1
+        for l in range(S):
+            idx = (l - 1) // 2
+            g_criterion.add_node(l == 0, l == S - 1 or l == S - 2)
+            label = target[idx] if l % 2 else blank_idx
+            g_criterion.add_arc(l, l, label)
+            if l > 0:
+                g_criterion.add_arc(l - 1, l, label)
+            if l % 2 and l > 1 and label != target[idx - 1]:
+                g_criterion.add_arc(l - 2, l, label)
+        return g_criterion
+
+    @staticmethod
     def forward(ctx, log_probs, targets, blank_idx=0, reduction="none"):
         grad_enabled = log_probs.requires_grad
-        is_cuda = False
-        if log_probs.is_cuda:
-            is_cuda = True
-            log_probs = log_probs.cpu()
-        B, T, C = list(log_probs.shape)
-        loss = torch.zeros(B, dtype=torch.float)
-        input_grad = torch.zeros(
-            log_probs.shape) if grad_enabled else torch.Tensor()
+        B, T, C = log_probs.shape
+        losses = [None] * B
+        scales = [None] * B
+        emissions_graphs = [None] * B
 
         def process(b):
             # create emission graph
-            emissions = gtn.linear_graph(T, C, True)
-            emissions.set_weights(log_probs[b].flatten().tolist())
+            g_emissions = gtn.linear_graph(T, C, log_probs.requires_grad)
+            g_emissions.set_weights(
+                log_probs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
+            )
 
             # create criterion graph
-            criterion = gtn.Graph(False)
-            target = targets[b]
-            L = len(target)
-            S = 2 * L + 1
-            for l in range(S):
-                idx = (l - 1) // 2
-                criterion.add_node(l == 0, l == S - 1 or l == S - 2)
-                label = target[idx] if l % 2 else blank_idx
-                criterion.add_arc(l, l, label)
-                if l > 0:
-                    criterion.add_arc(l - 1, l, label)
-                if l % 2 and l > 1 and label != target[idx - 1]:
-                    criterion.add_arc(l - 2, l, label)
+            g_criterion = CTCLossFunction.create_ctc_graph(targets[b], blank_idx)
 
             # compose the graphs
-            fwd_graph = gtn.forward_score(gtn.compose(emissions, criterion))
-            scale = -1.0
-            if reduction == "mean":
-                scale = -1.0 / L if L > 0 else scale
-            elif reduction != "none":
-                raise ValueError("invalid value for reduction '" +
-                                 str(reduction) + "'")
-            loss[b] = fwd_graph.item() * scale
+            g_loss = gtn.negate(
+                gtn.forward_score(gtn.intersect(g_emissions, g_criterion))
+            )
 
-            if grad_enabled:
-                gtn.backward(fwd_graph, False)
-                grad = emissions.grad().weights()
-                input_grad[b] = torch.Tensor(grad).view(1, T, C)
-                input_grad[b] *= scale
+            scale = 1.0
+            if reduction == "mean":
+                L = len(targets[b])
+                scale = 1.0 / L if L > 0 else scale
+            elif reduction != "none":
+                raise ValueError("invalid value for reduction '" + str(reduction) + "'")
+
+            # Save for backward:
+            losses[b] = g_loss
+            scales[b] = scale
+            emissions_graphs[b] = g_emissions
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
             f.result()
-        ctx.constant = input_grad.cuda() / B if is_cuda else input_grad / B
-        return torch.mean(loss.cuda() if is_cuda else loss)
+        ctx.auxiliary_data = (losses, scales, emissions_graphs, log_probs.shape)
+        loss = torch.tensor([losses[b].item() * scales[b] for b in range(B)])
+        return torch.mean(losses.cuda() if log_probs.is_cuda else loss)
 
     @staticmethod
     def backward(ctx, grad_output):
+        losses, scales, emissions_graphs, in_shape = ctx.auxiliary_data
+        B, T, C = in_shape
+        input_grad = torch.empty((B, T, C))
+
+        def process(b):
+            gtn.backward(losses[b], False)
+            emissions = emissions_graphs[b]
+            grad = emissions.grad().weights_to_numpy()
+            input_grad[b] = torch.from_numpy(grad).view(1, T, C) * scales[b]
+
+        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
+        futures = [executor.submit(process, b) for b in range(B)]
+        for f in futures:
+            f.result()
+
+        if grad_output.is_cuda:
+            input_grad = input_grad.cuda()
+        input_grad *= grad_output / B
+
         return (
-            ctx.constant *
-            grad_output.view(-1, 1, 1).expand(ctx.constant.size()),
-            None,
-            None,
-            None,
+            input_grad,
+            None,  # targets
+            None,  # blank_idx
+            None,  # reduction
         )
 
 
 CTCLoss = CTCLossFunction.apply
+
+
+class ASGLossFunction(torch.autograd.Function):
+    @staticmethod
+    def create_transitions_graph(transitions):
+        num_classes = transitions.shape[1]
+        assert transitions.shape == (num_classes + 1, num_classes)
+        g_transitions = gtn.Graph(transitions.requires_grad)
+        g_transitions.add_node(True)
+        for i in range(1, num_classes + 1):
+            g_transitions.add_node(False, True)
+            g_transitions.add_arc(0, i, i - 1)  #  p(i | <s>)
+        for i in range(num_classes):
+            for j in range(num_classes):
+                g_transitions.add_arc(j + 1, i + 1, i)  # p(i | j)
+        g_transitions.set_weights(
+            transitions.cpu(memory_format=torch.contiguous_format).data_ptr()
+        )
+        return g_transitions
+
+    @staticmethod
+    def create_force_align_graph(target):
+        g_fal = gtn.Graph(False)
+        L = len(target)
+        g_fal.add_node(True)
+        for l in range(1, L + 1):
+            g_fal.add_node(False, l == L)
+            g_fal.add_arc(l - 1, l, target[l - 1])
+            g_fal.add_arc(l, l, target[l - 1])
+        return g_fal
+
+    @staticmethod
+    def forward(ctx, inputs, transitions, targets, reduction="none"):
+        B, T, C = inputs.shape
+        losses = [None] * B
+        scales = [None] * B
+        emissions_graphs = [None] * B
+        transitions_graphs = [None] * B
+
+        transitions = transitions.cpu()  # avoid multiple cuda -> cpu copies
+
+        def process(b):
+            # create emission graph
+            g_emissions = gtn.linear_graph(T, C, inputs.requires_grad)
+            g_emissions.set_weights(
+                inputs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
+            )
+
+            # create transition graph
+            g_transitions = ASGLossFunction.create_transitions_graph(transitions)
+
+            # create force align criterion graph
+            g_fal = ASGLossFunction.create_force_align_graph(targets[b])
+
+            # compose the graphs
+            g_fal_fwd = gtn.forward_score(
+                gtn.intersect(gtn.intersect(g_fal, g_transitions), g_emissions)
+            )
+            g_fcc_fwd = gtn.forward_score(gtn.intersect(g_emissions, g_transitions))
+            g_loss = gtn.subtract(g_fcc_fwd, g_fal_fwd)
+            scale = 1.0
+            if reduction == "mean":
+                scale = 1.0 / L if L > 0 else scale
+            elif reduction != "none":
+                raise ValueError("invalid value for reduction '" + str(reduction) + "'")
+
+            # Save for backward:
+            losses[b] = g_loss
+            scales[b] = scale
+            emissions_graphs[b] = g_emissions
+            transitions_graphs[b] = g_transitions
+
+        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
+        futures = [executor.submit(process, b) for b in range(B)]
+        for f in futures:
+            f.result()
+        executor.shutdown()
+        ctx.auxiliary_data = (
+            losses,
+            scales,
+            emissions_graphs,
+            transitions_graphs,
+            inputs.shape,
+        )
+        loss = torch.tensor([losses[b].item() * scales[b] for b in range(B)])
+        return torch.mean(losses.cuda() if inputs.is_cuda else loss)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        (
+            losses,
+            scales,
+            emissions_graphs,
+            transitions_graphs,
+            in_shape,
+        ) = ctx.auxiliary_data
+        B, T, C = in_shape
+        input_grad = transitions_grad = None
+        if ctx.needs_input_grad[0]:
+            input_grad = torch.empty((B, T, C))
+        if ctx.needs_input_grad[1]:
+            transitions_grad = torch.empty((B, C + 1, C))
+
+        def process(b):
+            gtn.backward(losses[b], False)
+            emissions = emissions_graphs[b]
+            transitions = transitions_graphs[b]
+            if input_grad is not None:
+                grad = emissions.grad().weights_to_numpy()
+                input_grad[b] = torch.from_numpy(grad).view(1, T, C) * scales[b]
+            if transitions_grad is not None:
+                grad = transitions.grad().weights_to_numpy()
+                transitions_grad[b] = (
+                    torch.from_numpy(grad).view(1, C + 1, C) * scales[b]
+                )
+
+        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
+        futures = [executor.submit(process, b) for b in range(B)]
+        for f in futures:
+            f.result()
+
+        if input_grad is not None:
+            if grad_output.is_cuda:
+                input_grad = input_grad.cuda()
+            input_grad *= grad_output / B
+
+        if transitions_grad is not None:
+            if grad_output.is_cuda:
+                transitions_grad = transitions_grad.cuda()
+
+            transitions_grad = torch.mean(transitions_grad, 0) * grad_output
+
+        return (
+            input_grad,
+            transitions_grad,
+            None,  # target
+            None,  # reduction
+        )
+
+
+ASGLoss = ASGLossFunction.apply
