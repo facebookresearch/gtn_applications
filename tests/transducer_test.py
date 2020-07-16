@@ -183,7 +183,7 @@ class TestTransducer(unittest.TestCase):
             torch.allclose(scores.grad, expected_grad, rtol=1e-4, atol=1e-5)
         )
 
-    # Jacobian test does not work at fp32 precision
+    @unittest.skip("Enable when gtn supports retain grad graph.")
     def test_jacobian(self):
         T = 20
         N = 15
@@ -211,17 +211,16 @@ class TestTransducer(unittest.TestCase):
         transducer_result = transducer(inputs, tgt)
         self.assertAlmostEqual(ctc_result, transducer_result, places=5)
 
-# TODO, need a way to retain gtn gradient graph.
-#        def fn(inputs):
-#            return transducer(inputs, tgt)
-#
-#        def fn_mean(inputs):
-#            return transducer(inputs, tgt, reduction="mean")
-#
-#        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
-#                                 atol=1e-2))
-#        self.assertTrue(
-#            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
+        def fn(inputs):
+            return transducer(inputs, tgt)
+
+        def fn_mean(inputs):
+            return transducer(inputs, tgt, reduction="mean")
+
+        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
+                                 atol=1e-2))
+        self.assertTrue(
+            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
 
 
 if __name__ == "__main__":

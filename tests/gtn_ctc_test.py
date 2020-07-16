@@ -62,7 +62,7 @@ class TestCTCCriterion(unittest.TestCase):
         # fmt: on
         self.assertTrue(log_emissions.grad.allclose(expected_grad))
 
-    # Jacobian test does not work at fp32 precision
+    @unittest.skip("Enable when gtn supports retain grad graph.")
     def test_jacobian(self):
         T = 20
         N = 15
