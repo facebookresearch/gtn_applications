@@ -218,7 +218,7 @@ class CTCLossFunction(torch.autograd.Function):
         def process(b):
             # create emission graph
             emissions = gtn.linear_graph(T, C, True)
-            emissions.set_weights(log_probs[b].flatten().tolist())
+            emissions.set_weights(log_probs[b].cpu().data_ptr())
 
             # create criterion graph
             criterion = gtn.Graph(False)
@@ -247,7 +247,7 @@ class CTCLossFunction(torch.autograd.Function):
 
             if grad_enabled:
                 gtn.backward(fwd_graph, False)
-                grad = emissions.grad().weights()
+                grad = emissions.grad().weights_to_numpy()
                 input_grad[b] = torch.Tensor(grad).view(1, T, C)
                 input_grad[b] *= scale
 

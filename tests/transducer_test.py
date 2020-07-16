@@ -8,6 +8,7 @@ import torch
 import unittest
 
 from transducer import Transducer
+from utils import CTCLoss
 from torch.autograd import gradcheck
 
 
@@ -172,7 +173,7 @@ class TestTransducer(unittest.TestCase):
         )
 
         loss = transducer(scores, labels)
-        self.assertAlmostEqual(loss.item(), expected_loss.item(), 5)
+        self.assertAlmostEqual(loss.item(), expected_loss.item(), places=5)
         loss.backward()
         gtn.backward(expected_loss)
 
@@ -181,6 +182,45 @@ class TestTransducer(unittest.TestCase):
         self.assertTrue(
             torch.allclose(scores.grad, expected_grad, rtol=1e-4, atol=1e-5)
         )
+
+    # Jacobian test does not work at fp32 precision
+    def test_jacobian(self):
+        T = 20
+        N = 15
+        B = 5
+        tgt = [
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            [1, 1],
+            [0, 2, 3],
+            [0, 0, 0, 0, 0],
+            [0, 4, 8, 12],
+        ]
+
+        tokens = list((t,) for t in range(N - 1))
+        graphemes_to_idx = {t : t for t in range(N - 1)}
+        transducer = Transducer(
+            tokens=tokens,
+            graphemes_to_idx=graphemes_to_idx,
+            blank=True,
+            allow_repeats=False)
+
+        inputs = torch.randn(T, B, N, dtype=torch.float, requires_grad=True)
+        ctc_inputs = torch.nn.functional.log_softmax(
+            inputs.permute(1, 0, 2).contiguous(), 2)
+        ctc_result = CTCLoss(ctc_inputs, tgt, N - 1)
+        transducer_result = transducer(inputs, tgt)
+        self.assertAlmostEqual(ctc_result, transducer_result, places=5)
+
+        def fn(inputs):
+            return transducer(inputs, tgt)
+
+        #def fn_mean(inputs):
+        #    return transducer(inputs, tgt, reduction="mean")
+
+        #self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
+        #                         atol=1e-2))
+    #    self.assertTrue(
+    #        gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
 
 
 if __name__ == "__main__":

@@ -71,7 +71,24 @@ def make_token_graph(token_list, blank=False, allow_repeats=True):
 
 
 class Transducer(torch.nn.Module):
+    """
+    A generic transducer loss function.
 
+    Args:
+        tokens (list) : A list of iterable objects (e.g. strings, tuples, etc)
+            representing the output tokens of the model (e.g. letters,
+            word-pieces, words). For example ["a", "b", "ab", "ba", "aba"]
+            could be a list of sub-word tokens.
+        graphemes_to_idx (dict) : A dictionary mapping grapheme units (e.g.
+            "a", "b", ..) to their corresponding integer index.
+        n_gram (int) : Order of the token-level transition model. If `n_gram=0`
+            then no transition model is used.
+        blank (boolean) : Toggle the use of an optional blank inbetween tokens.
+        allow_repeats (boolean) : If false, then we don't allow paths with
+            consecutive tokens in the alignment graph. This keeps the graph
+            unambiguous in the sense that the same input cannot transduce to
+            different outputs.
+    """
     def __init__(
             self,
             tokens,
@@ -102,7 +119,7 @@ class Transducer(torch.nn.Module):
 class TransducerLossFunction(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, inputs, targets, tokens, lexicon, transitions=None):
+    def forward(ctx, inputs, targets, tokens, lexicon, transitions=None, reduction=None):
         B, T, C = inputs.shape
         losses = [None] * B
         emissions_graphs = [None] * B
@@ -138,12 +155,21 @@ class TransducerLossFunction(torch.autograd.Function):
         for f in futures:
             f.result()
         ctx.graphs = (losses, emissions_graphs, transitions_graphs)
-        loss = torch.tensor([l.item() for l in losses])
+
+        # Optionally reduce by target length:
+        if reduction == "mean":
+            scales = [(1 / len(t) if len(t) > 0 else 1.0) for t in targets]
+        else:
+            scales = [1.0] * B
+        ctx.scales = scales
+
+        loss = torch.tensor([l.item() * s for l, s in zip(losses, scales)])
         return torch.mean(loss.cuda() if inputs.is_cuda else loss)
 
     @staticmethod
     def backward(ctx, grad_output):
         losses, emissions_graphs, transitions_graphs = ctx.graphs
+        scales = ctx.scales
         B = len(emissions_graphs)
         T = emissions_graphs[0].num_nodes() - 1
         C = emissions_graphs[0].num_arcs() // T
@@ -155,16 +181,16 @@ class TransducerLossFunction(torch.autograd.Function):
             input_grad = torch.empty((B, T, C))
         if calc_transitions:
             transitions_grad = torch.empty(transtions_graphs[0].num_arcs())
-
         def process(b):
             gtn.backward(losses[b], False)
             emissions = emissions_graphs[b]
             transitions = transitions_graphs[b]
             if calc_emissions:
                 grad = emissions.grad().weights_to_numpy()
-                input_grad[b] = torch.tensor(grad).view(1, T, C)
+                input_grad[b] = torch.tensor(grad).view(1, T, C) * scales[b]
             if calc_transitions:
                 raise NotImplementedError("Transitions not implemented yet.")
+            # TODO, clean-up emissions and transitions graphs.
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
@@ -186,6 +212,7 @@ class TransducerLossFunction(torch.autograd.Function):
             None, # tokens
             None, # lex
             transitions_grad,
+            None,
         )
 
 
