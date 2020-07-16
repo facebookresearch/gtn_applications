@@ -78,7 +78,7 @@ class TestTransducer(unittest.TestCase):
 
         loss = transducer(log_emissions, labels)
         self.assertAlmostEqual(loss.item(), 3.34211, places=4)
-        loss.backward()
+        loss.backward(retain_graph=True)
         # fmt: off
         expected_grad = torch.tensor((
             -0.366234, 0.221185,  0.0917319, 0.0129757,  0.0142857,  0.0260553,
@@ -211,16 +211,17 @@ class TestTransducer(unittest.TestCase):
         transducer_result = transducer(inputs, tgt)
         self.assertAlmostEqual(ctc_result, transducer_result, places=5)
 
-        def fn(inputs):
-            return transducer(inputs, tgt)
-
-        #def fn_mean(inputs):
-        #    return transducer(inputs, tgt, reduction="mean")
-
-        #self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
-        #                         atol=1e-2))
-    #    self.assertTrue(
-    #        gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
+# TODO, need a way to retain gtn gradient graph.
+#        def fn(inputs):
+#            return transducer(inputs, tgt)
+#
+#        def fn_mean(inputs):
+#            return transducer(inputs, tgt, reduction="mean")
+#
+#        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
+#                                 atol=1e-2))
+#        self.assertTrue(
+#            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
 
 
 if __name__ == "__main__":
