@@ -194,7 +194,8 @@ def load_metadata(data_path):
             text = " ".join(line[8:])
             # remove garbage tokens:
             text = text.replace("#", "")
-            text = re.sub(r"\|+", "|", text)
+            # swap word sep from | to ▁
+            text = re.sub(r"\|+", "▁", text)
             form_key = "-".join(line[0].split("-")[:-1])
             forms[form_key].append({
                 "key" : line[0],
