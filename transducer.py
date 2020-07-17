@@ -95,7 +95,8 @@ class Transducer(torch.nn.Module):
             graphemes_to_idx,
             n_gram=0,
             blank=False,
-            allow_repeats=True):
+            allow_repeats=True,
+            reduction="none"):
         super(Transducer, self).__init__()
         self.tokens = make_token_graph(
             tokens, blank=blank, allow_repeats=allow_repeats)
@@ -103,6 +104,7 @@ class Transducer(torch.nn.Module):
         if n_gram > 0:
             raise NotImplementedError("Transition graphs not yet implemented.")
         self.transitions = None
+        self.reduction = reduction
 
     def forward(self, inputs, targets):
         if self.transitions is None:
@@ -113,7 +115,8 @@ class Transducer(torch.nn.Module):
             targets,
             self.tokens,
             self.lexicon,
-            self.transitions)
+            self.transitions,
+            self.reduction)
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
@@ -147,7 +150,7 @@ class Transducer(torch.nn.Module):
 class TransducerLossFunction(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, inputs, targets, tokens, lexicon, transitions=None, reduction=None):
+    def forward(ctx, inputs, targets, tokens, lexicon, transitions=None, reduction="none"):
         B, T, C = inputs.shape
         losses = [None] * B
         emissions_graphs = [None] * B

@@ -183,8 +183,7 @@ class TestTransducer(unittest.TestCase):
             torch.allclose(scores.grad, expected_grad, rtol=1e-4, atol=1e-5)
         )
 
-    @unittest.skip("Enable when gtn supports retain grad graph.")
-    def test_jacobian(self):
+    def test_ctc_compare(self):
         T = 20
         N = 15
         B = 5
@@ -198,29 +197,31 @@ class TestTransducer(unittest.TestCase):
 
         tokens = list((t,) for t in range(N - 1))
         graphemes_to_idx = {t : t for t in range(N - 1)}
-        transducer = Transducer(
-            tokens=tokens,
-            graphemes_to_idx=graphemes_to_idx,
-            blank=True,
-            allow_repeats=False)
-
         inputs = torch.randn(T, B, N, dtype=torch.float, requires_grad=True)
-        ctc_inputs = torch.nn.functional.log_softmax(
-            inputs.permute(1, 0, 2).contiguous(), 2)
-        ctc_result = CTCLoss(ctc_inputs, tgt, N - 1)
-        transducer_result = transducer(inputs, tgt)
-        self.assertAlmostEqual(ctc_result, transducer_result, places=5)
 
-        def fn(inputs):
-            return transducer(inputs, tgt)
+        # With and without target length reduction:
+        for reduction in ["none", "mean"]:
+            transducer = Transducer(
+                tokens=tokens,
+                graphemes_to_idx=graphemes_to_idx,
+                blank=True,
+                allow_repeats=False,
+                reduction=reduction)
+            ctc_inputs = torch.nn.functional.log_softmax(
+                inputs.permute(1, 0, 2).contiguous(), 2)
+            ctc_result = CTCLoss(ctc_inputs, tgt, N - 1, reduction)
+            ctc_result.backward()
+            ctc_grad = inputs.grad
+            inputs.grad = None
 
-        def fn_mean(inputs):
-            return transducer(inputs, tgt, reduction="mean")
+            transducer_result = transducer(inputs, tgt)
+            transducer_result.backward()
+            transducer_grad = inputs.grad
+            inputs.grad = None
 
-        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
-                                 atol=1e-2))
-        self.assertTrue(
-            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
+            self.assertAlmostEqual(ctc_result, transducer_result, places=5)
+            self.assertTrue(
+                torch.allclose(ctc_grad, transducer_grad, rtol=1e-4, atol=1e-5))
 
 
     def test_viterbi(self):

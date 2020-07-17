@@ -167,7 +167,7 @@ def train(world_rank, args):
         criterion = transducer.Transducer(
             preprocessor.tokens,
             preprocessor.graphemes_to_index,
-            balnk=config["criterion"]["blank"],
+            blank=config["criterion"]["blank"],
             allow_repeats=config["criterion"]["allow_repeats"])
     else:
         if not config["criterion"]["blank"]:
