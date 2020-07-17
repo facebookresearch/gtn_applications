@@ -253,7 +253,7 @@ class CTCLossFunction(torch.autograd.Function):
             f.result()
         ctx.auxiliary_data = (losses, scales, emissions_graphs, log_probs.shape)
         loss = torch.tensor([losses[b].item() * scales[b] for b in range(B)])
-        return torch.mean(losses.cuda() if log_probs.is_cuda else loss)
+        return torch.mean(loss.cuda() if log_probs.is_cuda else loss)
 
     @staticmethod
     def backward(ctx, grad_output):
