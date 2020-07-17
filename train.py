@@ -168,13 +168,13 @@ def train(world_rank, args):
             preprocessor.tokens,
             preprocessor.graphemes_to_index,
             blank=config["criterion"]["blank"],
-            allow_repeats=config["criterion"]["allow_repeats"])
+            allow_repeats=config["criterion"]["allow_repeats"],
+            reduction="mean")
     else:
         if not config["criterion"]["blank"]:
             logging.fatal("CTC requires a blank token.")
             sys.exit(1)
-        criterion = models.CTC(blank=output_size - 1,
-                               use_gtn=args.use_gtn).to(device)
+        criterion = models.CTC(blank=output_size - 1).to(device)
     if is_distributed_train:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[world_rank])
