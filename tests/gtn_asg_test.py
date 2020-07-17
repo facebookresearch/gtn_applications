@@ -11,6 +11,11 @@ from torch.autograd import gradcheck
 
 
 class TestASGCriterion(unittest.TestCase):
+    def setUp(self):
+        self.device = torch.device("cpu")
+        if torch.cuda.device_count() > 0:
+            self.device = torch.device("cuda")
+
     def test_fwd_bwd(self):
         T = 5
         N = 6
@@ -40,12 +45,14 @@ class TestASGCriterion(unittest.TestCase):
                     [-0.3846, 0.1175, 0.1052, 0.2172, -0.0362, 0.3055],
                 ],
             ],
+            device=self.device,
             requires_grad=True,
         )
         emissions.retain_grad()
-        transitions = torch.zeros((N + 1, N), requires_grad=True)
+        transitions = torch.zeros((N + 1, N), device=self.device, requires_grad=True)
         fwd = ASGLoss(emissions, transitions, labels)
         self.assertAlmostEqual(fwd.item(), 7.47995, places=4)
+
         fwd.backward()
         expected_grad = torch.tensor(
             [
@@ -70,7 +77,8 @@ class TestASGCriterion(unittest.TestCase):
                     [0.2197, -0.1466, -0.5742, 0.1510, 0.2160, 0.1342],
                     [0.1050, -0.8265, 0.1714, 0.1917, 0.1488, 0.2094],
                 ],
-            ]
+            ],
+            device=self.device,
         )
 
         expected_grad = expected_grad / B
@@ -84,7 +92,8 @@ class TestASGCriterion(unittest.TestCase):
                     [0.3694, -0.6688, 0.3047, -0.8531, -0.6571, 0.2870],
                     [0.3866, 0.3321, 0.3447, 0.3664, -0.2163, 0.3039],
                     [0.3640, -0.6943, 0.2988, -0.6722, 0.3215, -0.1860],
-                ]
+                ],
+                device=self.device,
             ).view(N, N)
             / B
         )
@@ -95,10 +104,12 @@ class TestASGCriterion(unittest.TestCase):
         N = 3
         input_list = [0, 0, 7, 5, 4, 3, 5, 8, 5, 5, 4, 3]
         trans_list = [0, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0]
-        expected_path = [2, 1, 0] # collapsed from [2, 1, 1, 0]
+        expected_path = [2, 1, 0]  # collapsed from [2, 1, 1, 0]
         asg = ASG(N)
         for param in asg.parameters():
-            param.data = torch.tensor(trans_list, dtype=torch.float32).view(N + 1, N)
+            param.data = torch.tensor(
+                trans_list, device=self.device, dtype=torch.float32
+            ).view(N + 1, N)
         input = torch.tensor(input_list, dtype=torch.float32).view(1, T, N)
         path = asg.decode(input)[0].tolist()
         self.assertEqual(len(expected_path), len(path))
