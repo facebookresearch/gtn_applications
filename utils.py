@@ -315,7 +315,6 @@ class ASGLossFunction(torch.autograd.Function):
             g_fcc_fwd = gtn.forward_score(gtn.intersect(g_emissions, g_transitions))
             g_loss = gtn.subtract(g_fcc_fwd, g_fal_fwd)
             scale = 1.0
-
             if reduction == "mean":
                 L = len(targets[b])
                 scale = 1.0 / L if L > 0 else scale
