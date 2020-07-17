@@ -128,6 +128,45 @@ class CudaTimer:
         self.end_events = collections.defaultdict(list)
 
 
+def pack_replabels(tokens, num_replabels):
+    if all(isinstance(t, list) for t in tokens):
+        return [pack_replabels(t, num_replabels) for t in tokens]
+    assert isinstance(tokens, list)
+    new_tokens = []
+    L = len(tokens)
+    num = 0
+    prev_token = -1
+    for token in tokens:
+        if token == prev_token and num < num_replabels:
+            num += 1
+        else:
+            if num > 0:
+                new_tokens.append(num - 1)
+                num = 0
+            new_tokens.append(token)
+            prev_token = token
+    if num > 0:
+        new_tokens.append(num - 1)
+    return new_tokens
+
+
+def unpack_replabels(tokens, num_replabels):
+    if all(isinstance(t, list) for t in tokens):
+        return [unpack_replabels(t, num_replabels) for t in tokens]
+    assert isinstance(tokens, list)
+    new_tokens = []
+    prev_token = -1
+    for token in tokens:
+        if token >= num_replabels:
+            new_tokens.append(token)
+            prev_token = token
+        elif prev_token != -1:
+            for i in range(token + 1):
+                new_tokens.append(prev_token)
+            prev_token = -1
+    return new_tokens
+
+
 # Used to measure the time taken for multiple events
 class Timer:
     def __init__(self, keys):

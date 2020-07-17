@@ -20,7 +20,6 @@ def parse_args():
     parser.add_argument(
         "--config", type=str, help="A json configuration file for experiment."
     )
-    parser.add_argument("--use_gtn", action="store_true", help="Use GTN")
     parser.add_argument(
         "--checkpoint_path",
         default="/tmp/",
@@ -46,8 +45,6 @@ def parse_args():
     if not torch.cuda.is_available():
         logging.fatal("No available CUDA devices")
         sys.exit(1)
-
-    logging.info(("" if args.use_gtn else "Not ") + "Using GTN")
 
     logging.info("World size is : " + str(args.world_size))
 
@@ -166,8 +163,13 @@ def train(world_rank, args):
     train_loader = utils.data_loader(trainset, config, world_rank, args.world_size)
     val_loader = utils.data_loader(valset, config, world_rank, args.world_size)
 
-    # setup Model:
-    output_size = preprocessor.num_classes + 1  # account for blank
+    # setup criterion, model:
+    criterion, output_size = models.load_criterion(
+        config.get("criterion_type", "ctc"),
+        preprocessor.num_classes,
+        config.get("criterion", {}),
+    )
+    criterion = criterion.to(world_rank)
     model = models.load_model(
         config["model_type"], input_size, output_size, config["model"]
     ).to(world_rank)
@@ -175,12 +177,13 @@ def train(world_rank, args):
     logging.info(
         "Training {} model with {:,} parameters.".format(config["model_type"], n_params)
     )
-    criterion = models.CTC(blank=output_size - 1, use_gtn=args.use_gtn).to(world_rank)
 
+    criterion_module = criterion # `decode` cannot be called on DDP module
     if is_distributed_train:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[world_rank]
         )
+
         if len(list(criterion.parameters())) > 0:
             criterion = torch.nn.parallel.DistributedDataParallel(
                 criterion, device_ids=[world_rank]
@@ -196,6 +199,13 @@ def train(world_rank, args):
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=step_size, gamma=0.5
     )
+    crit_optimizer = crit_scheduler = None
+    if len(list(criterion.parameters())) > 0:
+        crit_lr = config["optim"]["crit_learning_rate"]
+        crit_optimizer = torch.optim.SGD(criterion.parameters(), lr=crit_lr)
+        crit_scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=step_size, gamma=0.5
+        )
 
     min_val_loss = float("inf")
     min_val_cer = float("inf")
@@ -233,11 +243,13 @@ def train(world_rank, args):
             if max_grad_norm is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
+            if crit_optimizer:
+                crit_optimizer.step()
             num_updates += 1
             timers.stop("optim").start("metrics")
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
-            dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
+            dist, toks = compute_edit_distance(criterion_module.decode(outputs), targets)
             meters.edit_distance += dist
             meters.num_tokens += toks
             timers.stop("metrics").start("ds_fetch")
@@ -255,7 +267,7 @@ def train(world_rank, args):
             logging.info("Evaluating validation set..")
         timers.start("test_total")
         val_loss, val_cer = test(
-            model, criterion, val_loader, world_rank, args.world_size
+            model, criterion_module, val_loader, world_rank, args.world_size
         )
         timers.stop("test_total")
         if world_rank == 0:
@@ -279,6 +291,8 @@ def train(world_rank, args):
                 )
             )
         scheduler.step()
+        if crit_scheduler:
+            crit_scheduler.step()
         start_time = time.time()
 
     if is_distributed_train:

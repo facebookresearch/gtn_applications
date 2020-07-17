@@ -102,15 +102,19 @@ class TestASGCriterion(unittest.TestCase):
     def test_viterbi(self):
         T = 4
         N = 3
-        input_list = [0, 0, 7, 5, 4, 3, 5, 8, 5, 5, 4, 3]
-        trans_list = [0, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0]
-        expected_path = [2, 1, 0]  # collapsed from [2, 1, 1, 0]
-        asg = ASG(N)
+        input_list = [0, 0, 0, 7, 0, 5, 4, 3, 0, 5, 8, 5, 0, 5, 4, 3]
+        trans_list = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 2, 0, 0]
+        expected_path = [3, 2, 2, 1]
+        rep = 1
+        asg = ASG(N, rep)
         for param in asg.parameters():
             param.data = torch.tensor(
                 trans_list, device=self.device, dtype=torch.float32
-            ).view(N + 1, N)
-        input = torch.tensor(input_list, dtype=torch.float32).view(1, T, N)
+            ).view(N + rep + 1, N + rep)
+        input = torch.tensor(input_list, device=self.device, dtype=torch.float32).view(
+            1, T, N + rep
+        )
+        input = input.permute(1, 0, 2)
         path = asg.decode(input)[0].tolist()
         self.assertEqual(len(expected_path), len(path))
         for i in range(0, len(path)):
