@@ -111,7 +111,7 @@ class TestASGCriterion(unittest.TestCase):
                 trans_list, device=self.device, dtype=torch.float32
             ).view(N + 1, N)
         input = torch.tensor(input_list, dtype=torch.float32).view(1, T, N)
-        path = asg.decode(input)[0].tolist()
+        path = asg.viterbi(input)[0].tolist()
         self.assertEqual(len(expected_path), len(path))
         for i in range(0, len(path)):
             self.assertEqual(expected_path[i], path[i])

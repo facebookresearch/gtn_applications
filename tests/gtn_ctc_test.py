@@ -67,7 +67,9 @@ class TestCTCCriterion(unittest.TestCase):
             0.0357786, 0.633813,  -0.678582, 0.00249248, 0.00272882, 0.0037688,
             0.0663296, -0.356151, 0.280111,  0.00283995, 0.0035545,  0.00331533,
             -0.541765, 0.396634,  0.123377,  0.00648837, 0.00903441, 0.00623107,
-        )).view(1, T, N)
+            ),
+            device=self.device,
+        ).view(1, T, N)
         # fmt: on
         self.assertTrue(log_emissions.grad.allclose(expected_grad))
 

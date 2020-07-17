@@ -166,7 +166,7 @@ class TestTransducer(unittest.TestCase):
 
         emissions = gtn.linear_graph(T, len(tokens), True)
 
-        emissions.set_weights(scores.flatten().tolist())
+        emissions.set_weights(scores.data_ptr())
         expected_loss = gtn.subtract(
             gtn.forward_score(emissions),
             gtn.forward_score(gtn.intersect(emissions, alignments)),

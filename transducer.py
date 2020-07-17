@@ -124,9 +124,8 @@ class Transducer(torch.nn.Module):
         def process(b):
             prediction = []
             emissions = gtn.linear_graph(T, C, False)
-            emissions.set_weights(
-                outputs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
-            )
+            cpu_data = outputs[b].cpu(memory_format=torch.contiguous_format)
+            emissions.set_weights(cpu_data.data_ptr())
             if self.transitions is not None:
                 full_graph = gtn.intersect(emissions, transitions)
             else:
@@ -159,7 +158,8 @@ class TransducerLossFunction(torch.autograd.Function):
         def process(b):
             # Create emissions graph:
             emissions = gtn.linear_graph(T, C, inputs.requires_grad)
-            emissions.set_weights(inputs[b].cpu().data_ptr())
+            cpu_data = inputs[b].cpu(memory_format=torch.contiguous_format)
+            emissions.set_weights(cpu_data.data_ptr())
             target = make_chain_graph(targets[b])
 
             # Create token to grapheme decomposition graph
