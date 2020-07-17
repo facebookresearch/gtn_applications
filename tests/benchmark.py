@@ -6,7 +6,7 @@ import time
 sys.path.append("..")
 from utils import CTCLoss
 
-if hasattr(sys.flags, 'nogil') and sys.flags.nogil:
+if hasattr(sys.flags, "nogil") and sys.flags.nogil:
     print("Running without GIL")
 else:
     print("Running with GIL")
@@ -25,7 +25,7 @@ for b in range(B):
         arr.append(random.randint(0, N - 2))
     tgt.append(arr)
 
-#warmup
+# warmup
 for i in range(5):
     if inputs.grad is not None:
         inputs.grad.zero_()

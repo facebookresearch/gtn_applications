@@ -16,12 +16,10 @@ import transducer
 def parse_args():
     parser = argparse.ArgumentParser(
         description="IAM Handwriting Recognition with Pytorch.")
-    parser.add_argument("--config",
-                        type=str,
-                        help="A json configuration file for experiment.")
-    parser.add_argument('--disable_cuda',
-                        action='store_true',
-                        help='Disable CUDA')
+    parser.add_argument("--config", type=str,
+        help="A json configuration file for experiment."
+    )
+    parser.add_argument('--disable_cuda', action='store_true', help='Disable CUDA')
     parser.add_argument("--use_gtn", action="store_true", help="Use GTN")
     parser.add_argument(
         "--checkpoint_path",
@@ -29,10 +27,9 @@ def parse_args():
         type=str,
         help="Checkpoint path for saving models",
     )
-    parser.add_argument("--world_size",
-                        default=1,
-                        type=int,
-                        help="world size for distributed training")
+    parser.add_argument(
+        "--world_size", default=1, type=int, help="world size for distributed training"
+    )
     parser.add_argument(
         "--dist_url",
         default="tcp://localhost:23146",
@@ -40,10 +37,9 @@ def parse_args():
         help="url used to set up distributed training. This should be"
         "the IP address and open port number of the master node",
     )
-    parser.add_argument("--dist_backend",
-                        default="nccl",
-                        type=str,
-                        help="distributed backend")
+    parser.add_argument(
+        "--dist_backend", default="nccl", type=str, help="distributed backend"
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
@@ -92,8 +88,7 @@ def test(model, criterion, data_loader, preprocessor, device, world_size):
 
 def checkpoint(model, criterion, checkpoint_path, save_best=False):
     model_checkpoint = os.path.join(checkpoint_path, "model.checkpoint")
-    criterion_checkpoint = os.path.join(checkpoint_path,
-                                        "criterion.checkpoint")
+    criterion_checkpoint = os.path.join(checkpoint_path, "criterion.checkpoint")
     torch.save(model.state_dict(), model_checkpoint)
     torch.save(criterion.state_dict(), criterion_checkpoint)
     if save_best:
@@ -144,13 +139,9 @@ def train(world_rank, args):
             img_height=input_size,
             tokens_path=config["data"].get("tokens", None),
             lexicon_path=config["data"].get("lexicon", None))
-    trainset = dataset.Dataset(data_path,
-                               preprocessor,
-                               split="train",
-                               augment=True)
+    trainset = dataset.Dataset(data_path, preprocessor, split="train", augment=True)
     valset = dataset.Dataset(data_path, preprocessor, split="validation")
-    train_loader = utils.data_loader(trainset, config, world_rank,
-                                     args.world_size)
+    train_loader = utils.data_loader(trainset, config, world_rank, args.world_size)
     val_loader = utils.data_loader(valset, config, world_rank, args.world_size)
 
     # setup Model:
@@ -177,10 +168,12 @@ def train(world_rank, args):
         criterion = models.CTC(blank=output_size - 1).to(device)
     if is_distributed_train:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[world_rank])
+            model, device_ids=[world_rank]
+        )
         if len(list(criterion.parameters())) > 0:
             criterion = torch.nn.parallel.DistributedDataParallel(
-                criterion, device_ids=[world_rank])
+                criterion, device_ids=[world_rank]
+            )
 
     epochs = config["optim"]["epochs"]
     lr = config["optim"]["learning_rate"]
@@ -189,9 +182,9 @@ def train(world_rank, args):
 
     # run training:
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                step_size=step_size,
-                                                gamma=0.5)
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=step_size, gamma=0.5
+    )
 
     min_val_loss = float("inf")
     min_val_cer = float("inf")
@@ -225,8 +218,7 @@ def train(world_rank, args):
             loss.backward()
             timers.stop("bwd").start("optim")
             if max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                               max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
             num_updates += 1
             timers.stop("optim").start("metrics")
@@ -246,27 +238,34 @@ def train(world_rank, args):
             logging.info(
                 "Epoch {} complete. "
                 "nUpdates {}, Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
-                    epoch + 1, num_updates, meters.avg_loss, meters.cer,
-                    epoch_time), )
+                    epoch + 1, num_updates, meters.avg_loss, meters.cer, epoch_time
+                ),
+            )
             logging.info("Evaluating validation set..")
         timers.start("test_total")
         val_loss, val_cer = test(model, criterion, val_loader, preprocessor,
                                  device, args.world_size)
         timers.stop("test_total")
         if world_rank == 0:
-            checkpoint(model, criterion, args.checkpoint_path,
-                       (val_cer < min_val_cer))
+            checkpoint(model, criterion, args.checkpoint_path, (val_cer < min_val_cer))
 
             min_val_loss = min(val_loss, min_val_loss)
             min_val_cer = min(val_cer, min_val_cer)
             logging.info(
                 "Validation Set: Loss {:.3f}, CER {:.3f}, "
                 "Best Loss {:.3f}, Best CER {:.3f}".format(
-                    val_loss, val_cer, min_val_loss, min_val_cer), )
-            logging.info("Timing Info: " + ", ".join([
-                "{} : {:.2f}ms".format(k, v * 1000.0)
-                for k, v in timers.value().items()
-            ]))
+                    val_loss, val_cer, min_val_loss, min_val_cer
+                ),
+            )
+            logging.info(
+                "Timing Info: "
+                + ", ".join(
+                    [
+                        "{} : {:.2f}ms".format(k, v * 1000.0)
+                        for k, v in timers.value().items()
+                    ]
+                )
+            )
         scheduler.step()
         start_time = time.time()
 
@@ -277,10 +276,9 @@ def train(world_rank, args):
 def main():
     args = parse_args()
     if args.world_size > 1:
-        torch.multiprocessing.spawn(train,
-                                    args=(args, ),
-                                    nprocs=args.world_size,
-                                    join=True)
+        torch.multiprocessing.spawn(
+            train, args=(args,), nprocs=args.world_size, join=True
+        )
     else:
         train(0, args)
 

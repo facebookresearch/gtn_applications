@@ -10,25 +10,33 @@ from torch.autograd import gradcheck
 
 
 class TestCTCCriterion(unittest.TestCase):
+    def setUp(self):
+        self.device = torch.device("cpu")
+        if torch.cuda.device_count() > 0:
+            self.device = torch.device("cuda")
+
     def test_fwd_trivial(self):
         T = 3
         N = 2
         labels = [[0, 0]]
-        emissions = torch.FloatTensor([1.0, 0.0, 0.0, 1.0, 1.0,
-                                       0.0]).view(1, T, N)
+        emissions = (
+            torch.FloatTensor([1.0, 0.0, 0.0, 1.0, 1.0, 0.0])
+            .view(1, T, N)
+            .to(self.device)
+        )
         log_probs = torch.log(emissions)
-        fwd = CTCLoss(log_probs, labels, N - 1)
+        fwd = CTCLoss(log_probs.to(self.device), labels, N - 1)
         self.assertAlmostEqual(fwd.item(), 0.0)
 
     def test_fwd(self):
         T = 3
         N = 4
         labels = [[1, 2]]
-        emissions = torch.FloatTensor([1.0] * T * N).view(1, T, N)
+        emissions = torch.FloatTensor([1.0] * T * N).view(1, T, N).to(self.device)
         log_probs = torch.log(emissions)
         m = torch.nn.LogSoftmax(2)
         log_probs = m(log_probs)
-        fwd = CTCLoss(log_probs, labels, N - 1)
+        fwd = CTCLoss(log_probs.to(self.device), labels, N - 1)
         self.assertAlmostEqual(fwd.item(), -math.log(0.25 * 0.25 * 0.25 * 5))
 
     def test_fwd_bwd(self):
@@ -43,6 +51,7 @@ class TestCTCCriterion(unittest.TestCase):
             0.0663296, 0.643849, 0.280111,  0.00283995, 0.0035545,  0.00331533,
             0.458235,  0.396634, 0.123377,  0.00648837, 0.00903441, 0.00623107,
             ),
+            device=self.device,
             requires_grad=True,
         )
         # fmt: on
@@ -81,7 +90,7 @@ class TestCTCCriterion(unittest.TestCase):
         def fn_mean(input):
             return CTCLoss(input, tgt, N - 1, "mean")
 
-        inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
+        inputs = torch.randn(B, T, N, dtype=torch.float, device = self.device, requires_grad=True)
         self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
                                   atol=1e-2))
         self.assertTrue(

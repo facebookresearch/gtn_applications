@@ -298,9 +298,8 @@ class ASG(torch.nn.Module):
             prediction = []
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, False)
-            g_emissions.set_weights(
-                outputs[b].cpu(memory_format=torch.contiguous_format).data_ptr()
-            )
+            cpu_data = outputs[b].cpu(memory_format=torch.contiguous_format)
+            g_emissions.set_weights(cpu_data.data_ptr())
 
             # create transition graph
             g_transitions = utils.ASGLossFunction.create_transitions_graph(
