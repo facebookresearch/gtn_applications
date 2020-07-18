@@ -346,5 +346,12 @@ def load_criterion(criterion_type, num_classes, config):
     elif criterion_type == "ctc":
         use_pt = config.get("use_pt", True)
         return CTC(num_classes, use_pt), num_classes + 1  # account for blank
+    elif criterion_type == "transducer":
+        criterion = transducer.Transducer(
+            preprocessor.tokens,
+            preprocessor.graphemes_to_index,
+            blank=config["criterion"]["blank"],
+            allow_repeats=config["criterion"]["allow_repeats"],
+            reduction="mean")
     else:
         raise ValueError(f"Unknown model type {criterion_type}")
