@@ -248,22 +248,21 @@ class RNN(torch.nn.Module):
 
 
 class CTC(torch.nn.Module):
-    def __init__(self, blank=0, use_gtn=False):
+    def __init__(self, blank, use_pt):
         super(CTC, self).__init__()
-        self.blank = blank
-        self.use_gtn = use_gtn
+        self.blank = blank  # index of blank label
+        self.use_pt = use_pt  # use pytorch version instead of GTN
 
     def forward(self, inputs, targets):
-        input_lengths = [inputs.shape[0]] * inputs.shape[1]
-        target_lengths = [t.numel() for t in targets]
         log_probs = torch.nn.functional.log_softmax(inputs, dim=2)
 
-        if self.use_gtn:
-            log_probs = log_probs.permute(
-                1, 0, 2
-            ).contiguous()  # T x B X C ->  B x T x C
+        if not self.use_pt:
+            targets = [t.tolist() for t in targets]
+            log_probs = log_probs.permute(1, 0, 2)  # T x B X C ->  B x T x C
             return utils.CTCLoss(log_probs, targets, self.blank, "mean")
         else:
+            input_lengths = [inputs.shape[0]] * inputs.shape[1]
+            target_lengths = [t.numel() for t in targets]
             targets = torch.cat(targets)
             return torch.nn.functional.ctc_loss(
                 log_probs, targets, input_lengths, target_lengths, blank=self.blank
@@ -282,17 +281,26 @@ class CTC(torch.nn.Module):
 
 
 class ASG(torch.nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, num_replabels=1):
         super(ASG, self).__init__()
         self.num_classes = num_classes
-        self.transitions = torch.nn.Parameter(torch.zeros(num_classes + 1, num_classes))
+        self.num_replabels = num_replabels
+        assert self.num_replabels > 0
+        self.transitions = torch.nn.Parameter(
+            torch.zeros(
+                self.num_classes + num_replabels + 1, self.num_classes + num_replabels
+            )
+        )
 
     def forward(self, inputs, targets):
+        targets = [t.tolist() for t in targets]
+        inputs = inputs.permute(1, 0, 2)  # T x B X C ->  B x T x C
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
     def viterbi(self, outputs):
+        outputs = outputs.permute(1, 0, 2)  # T x B X C ->  B x T x C
         B, T, C = outputs.shape
-        assert C == self.num_classes
+        assert C == self.num_classes + self.num_replabels
 
         def process(b):
             prediction = []
@@ -307,15 +315,13 @@ class ASG(torch.nn.Module):
             )
             g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
             prediction = g_path.labels_to_list()
-            return [x[0] for x in groupby(prediction)]
+            return utils.unpack_replabels(prediction, self.num_replabels)
 
         collapsed_predictions = []
         executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
-            prediction = torch.Tensor(f.result())
-            if outputs.is_cuda:
-                prediction = prediction.cuda()
+            prediction = torch.IntTensor(f.result())
             collapsed_predictions.append(prediction)
         executor.shutdown()
 
@@ -331,3 +337,14 @@ def load_model(model_type, input_size, output_size, config):
         return TDS2d(input_size, output_size, **config)
     else:
         raise ValueError(f"Unknown model type {model_type}")
+
+
+def load_criterion(criterion_type, num_classes, config):
+    if criterion_type == "asg":
+        num_replabels = config.get("num_replabels", 0)
+        return ASG(num_classes, num_replabels), num_classes + num_replabels
+    elif criterion_type == "ctc":
+        use_pt = config.get("use_pt", True)
+        return CTC(num_classes, use_pt), num_classes + 1  # account for blank
+    else:
+        raise ValueError(f"Unknown model type {criterion_type}")
