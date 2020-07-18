@@ -150,7 +150,7 @@ def train(world_rank, args):
     criterion = criterion.to(world_rank)
     model = models.load_model(
         config["model_type"], input_size, output_size, config["model"]
-    ).to(world_rank)
+    ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     logging.info(
         "Training {} model with {:,} parameters.".format(config["model_type"], n_params)

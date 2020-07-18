@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import utils
 
+import transducer
 
 class TDSBlock2d(torch.nn.Module):
     def __init__(self, in_channels, img_depth, kernel_size, dropout):
