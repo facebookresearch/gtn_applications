@@ -339,19 +339,22 @@ def load_model(model_type, input_size, output_size, config):
         raise ValueError(f"Unknown model type {model_type}")
 
 
-def load_criterion(criterion_type, num_classes, config):
+def load_criterion(criterion_type, preprocessor, config):
+    num_tokens = preprocessor.num_tokens
     if criterion_type == "asg":
         num_replabels = config.get("num_replabels", 0)
-        return ASG(num_classes, num_replabels), num_classes + num_replabels
+        return ASG(num_tokens, num_replabels), num_tokens + num_replabels
     elif criterion_type == "ctc":
         use_pt = config.get("use_pt", True)
-        return CTC(num_classes, use_pt), num_classes + 1  # account for blank
+        return CTC(num_tokens, use_pt), num_tokens + 1  # account for blank
     elif criterion_type == "transducer":
+        use_blank = config.get("blank", False)
         criterion = transducer.Transducer(
             preprocessor.tokens,
             preprocessor.graphemes_to_index,
-            blank=config["criterion"]["blank"],
-            allow_repeats=config["criterion"]["allow_repeats"],
+            blank=use_blank,
+            allow_repeats=config.get("allow_repeats", True),
             reduction="mean")
+        return criterion, num_tokens + use_blank
     else:
         raise ValueError(f"Unknown model type {criterion_type}")

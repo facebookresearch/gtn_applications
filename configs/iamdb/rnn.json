@@ -5,9 +5,6 @@
     "data_path" : "/datasets01/iamdb/060820/",
     "img_height" : 64
   },
-  "criterion" : {
-    "blank" : true
-  },
   "model_type" : "rnn",
   "model" : {
     "channels" : [8, 8],

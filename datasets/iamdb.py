@@ -171,7 +171,7 @@ class Preprocessor:
         self.img_height = img_height
 
     @property
-    def num_classes(self):
+    def num_tokens(self):
         return len(self.tokens)
 
     def to_index(self, line):

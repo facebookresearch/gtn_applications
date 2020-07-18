@@ -7,9 +7,6 @@
     "tokens" : "/checkpoint/awni/data/iamdb/word_pieces_tokens_100.txt",
     "lexicon" : "/checkpoint/awni/data/iamdb/word_pieces_lex_100.txt"
   },
-  "criterion" : {
-    "blank" : true
-  },
   "model_type" : "tds2d",
   "model" : {
     "depth" : 4,

@@ -144,7 +144,7 @@ def train(world_rank, args):
     # setup criterion, model:
     criterion, output_size = models.load_criterion(
         config.get("criterion_type", "ctc"),
-        preprocessor.num_classes,
+        preprocessor,
         config.get("criterion", {}),
     )
     criterion = criterion.to(world_rank)

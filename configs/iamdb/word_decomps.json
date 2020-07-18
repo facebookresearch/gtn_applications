@@ -6,6 +6,7 @@
     "img_height" : 64,
     "tokens_path" : "/checkpoint/awni/data/iamdb/word_pieces_100.txt"
   },
+  "criterion_type" : "tranducer",
   "criterion" : {
     "blank" : false,
     "allow_repeats" : true
