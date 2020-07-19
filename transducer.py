@@ -29,6 +29,7 @@ def make_lexicon_graph(word_pieces, graphemes_to_idx):
             graph.add_arc(prev, n, graphemes_to_idx[l], gtn.epsilon)
             prev = n
         graph.add_arc(prev, 0, graphemes_to_idx[wp[-1]], i)
+    graph.arc_sort()
     return graph
 
 
@@ -66,7 +67,7 @@ def make_token_graph(token_list, blank=False, allow_repeats=True):
             for j in range(ntoks):
                 if i != j:
                     graph.add_arc(i + 1, j + 1, j, j)
-
+    graph.arc_sort(True)
     return graph
 
 
@@ -161,14 +162,17 @@ class TransducerLossFunction(torch.autograd.Function):
             cpu_data = inputs[b].cpu(memory_format=torch.contiguous_format)
             emissions.set_weights(cpu_data.data_ptr())
             target = make_chain_graph(targets[b])
+            target.arc_sort(True)
 
             # Create token to grapheme decomposition graph
             tokens_target = gtn.remove(
                 gtn.project_output(gtn.compose(target, lexicon)))
+            tokens_target.arc_sort()
 
             # Create alignment graph:
             alignments = gtn.project_input(
                 gtn.remove(gtn.compose(tokens, tokens_target)))
+            alignments.arc_sort()
 
             num = gtn.forward_score(gtn.intersect(emissions, alignments))
             if transitions is not None:
