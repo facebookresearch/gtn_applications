@@ -18,7 +18,8 @@ def iamdb_pieces(args):
     sp = train_spm_model(
         (t.replace("|", " ") for t in train_text),
         num_pieces + 1, # to account for <unk>
-        user_symbols=["/"])
+        user_symbols=["/"], # added so token is in the output set
+    )
     vocab = sorted(set(
         w for t in text for w in t.replace("|", " ").split(" ") if w))
     print(f"Generating word piece list of size {num_pieces}.")
