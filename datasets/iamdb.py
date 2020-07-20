@@ -58,7 +58,8 @@ class Dataset(torch.utils.data.Dataset):
                 img_file = os.path.join(data_path, f"{key}.png")
                 images.append((img_file, line["box"], preprocessor.img_height))
                 text.append(line["text"])
-
+        images = images[:400]
+        text = text[:400]
         with mp.Pool(processes=16) as pool:
             images = pool.map(load_image, images)
         self.dataset = list(zip(images, text))

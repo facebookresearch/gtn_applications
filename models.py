@@ -307,7 +307,7 @@ class ASG(torch.nn.Module):
             prediction = []
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, False)
-            cpu_data = outputs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = outputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create transition graph

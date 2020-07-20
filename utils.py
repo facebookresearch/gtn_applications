@@ -262,7 +262,7 @@ class CTCLossFunction(torch.autograd.Function):
         def process(b):
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, log_probs.requires_grad)
-            cpu_data = log_probs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = log_probs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create criterion graph
@@ -338,7 +338,7 @@ class ASGLossFunction(torch.autograd.Function):
         for i in range(num_classes):
             for j in range(num_classes):
                 g_transitions.add_arc(j + 1, i + 1, i)  # p(i | j)
-        cpu_data = transitions.cpu(memory_format=torch.contiguous_format)
+        cpu_data = transitions.cpu().contiguous()
         g_transitions.set_weights(cpu_data.data_ptr())
         return g_transitions
 
@@ -367,7 +367,7 @@ class ASGLossFunction(torch.autograd.Function):
         def process(b):
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, inputs.requires_grad)
-            cpu_data = inputs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = inputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create transition graph

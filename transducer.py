@@ -110,7 +110,7 @@ class Transducer(torch.nn.Module):
     def forward(self, inputs, targets):
         if self.transitions is None:
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
-        inputs = inputs.permute(1, 0, 2).contiguous() # T x B X C ->  B x T x C
+        inputs = inputs.permute(1, 0, 2) # T x B X C ->  B x T x C
         return TransducerLoss(
             inputs,
             targets,
@@ -125,7 +125,7 @@ class Transducer(torch.nn.Module):
         def process(b):
             prediction = []
             emissions = gtn.linear_graph(T, C, False)
-            cpu_data = outputs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = outputs[b].cpu().contiguous()
             emissions.set_weights(cpu_data.data_ptr())
             if self.transitions is not None:
                 full_graph = gtn.intersect(emissions, transitions)
@@ -155,11 +155,10 @@ class TransducerLossFunction(torch.autograd.Function):
         losses = [None] * B
         emissions_graphs = [None] * B
         transitions_graphs = [None] * B
-
         def process(b):
             # Create emissions graph:
             emissions = gtn.linear_graph(T, C, inputs.requires_grad)
-            cpu_data = inputs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = inputs[b].cpu().contiguous()
             emissions.set_weights(cpu_data.data_ptr())
             target = make_chain_graph(targets[b])
             target.arc_sort(True)
@@ -190,6 +189,7 @@ class TransducerLossFunction(torch.autograd.Function):
         for f in futures:
             f.result()
         ctx.graphs = (losses, emissions_graphs, transitions_graphs)
+        ctx.input_shape = inputs.shape
 
         # Optionally reduce by target length:
         if reduction == "mean":
@@ -205,9 +205,7 @@ class TransducerLossFunction(torch.autograd.Function):
     def backward(ctx, grad_output):
         losses, emissions_graphs, transitions_graphs = ctx.graphs
         scales = ctx.scales
-        B = len(emissions_graphs)
-        T = emissions_graphs[0].num_nodes() - 1
-        C = emissions_graphs[0].num_arcs() // T
+        B, T, C = ctx.input_shape
         calc_emissions = emissions_graphs[0].calc_grad()
         calc_transitions = transitions_graphs[0] is not None \
                 and transitions_graphs[0].calc_grad()
@@ -223,9 +221,11 @@ class TransducerLossFunction(torch.autograd.Function):
             if calc_emissions:
                 grad = emissions.grad().weights_to_numpy()
                 input_grad[b] = torch.tensor(grad).view(1, T, C) * scales[b]
+                # TODO don't save emissions graph in forward if calc_emissions is False
             if calc_transitions:
                 raise NotImplementedError("Transitions not implemented yet.")
-            # TODO, clean-up emissions and transitions graphs.
+            # TODO, clean-up emissions and transitions graphs?
+
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
