@@ -219,7 +219,8 @@ class TestTransducer(unittest.TestCase):
             transducer_grad = inputs.grad
             inputs.grad = None
 
-            self.assertAlmostEqual(ctc_result, transducer_result, places=5)
+            self.assertAlmostEqual(
+                ctc_result.item(), transducer_result.item(), places=5)
             self.assertTrue(
                 torch.allclose(ctc_grad, transducer_grad, rtol=1e-4, atol=1e-5))
 
