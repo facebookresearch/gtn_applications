@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import collections
+from dataclasses import dataclass
 import gtn
 import logging
 import numpy as np
@@ -79,6 +80,36 @@ def padding_collate(samples):
         batch_inputs[e, :, : ip.shape[2]] = ip
 
     return batch_inputs, targets
+
+
+@dataclass
+class Meters:
+    loss = 0.0
+    num_samples = 0
+    num_tokens = 0
+    edit_distance = 0
+
+    def sync(self):
+        lst = [
+            self.loss, self.num_samples, self.num_tokens, self.edit_distance
+        ]
+        # TODO: avoid this so that distributed cpu training also works
+        lst_tensor = torch.FloatTensor(lst).cuda()
+        torch.distributed.all_reduce(lst_tensor)
+        (
+            self.loss,
+            self.num_samples,
+            self.num_tokens,
+            self.edit_distance,
+        ) = lst_tensor.tolist()
+
+    @property
+    def avg_loss(self):
+        return self.loss / self.num_samples
+
+    @property
+    def cer(self):
+        return self.edit_distance / self.num_tokens
 
 
 # A simple timer class inspired from `tnt.TimeMeter`
@@ -231,7 +262,7 @@ class CTCLossFunction(torch.autograd.Function):
         def process(b):
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, log_probs.requires_grad)
-            cpu_data = log_probs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = log_probs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create criterion graph
@@ -307,7 +338,7 @@ class ASGLossFunction(torch.autograd.Function):
         for i in range(num_classes):
             for j in range(num_classes):
                 g_transitions.add_arc(j + 1, i + 1, i)  # p(i | j)
-        cpu_data = transitions.cpu(memory_format=torch.contiguous_format)
+        cpu_data = transitions.cpu().contiguous()
         g_transitions.set_weights(cpu_data.data_ptr())
         return g_transitions
 
@@ -336,7 +367,7 @@ class ASGLossFunction(torch.autograd.Function):
         def process(b):
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, inputs.requires_grad)
-            cpu_data = inputs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = inputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create transition graph

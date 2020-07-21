@@ -1,5 +1,4 @@
 import argparse
-from dataclasses import dataclass
 import editdistance
 import json
 import logging
@@ -11,15 +10,16 @@ import torch
 import datasets
 import models
 import utils
+import transducer
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="IAM Handwriting Recognition with Pytorch."
+        description="IAM Handwriting Recognition with Pytorch.")
+    parser.add_argument("--config", type=str,
+        help="A json configuration file for experiment."
     )
-    parser.add_argument(
-        "--config", type=str, help="A json configuration file for experiment."
-    )
+    parser.add_argument('--disable_cuda', action='store_true', help='Disable CUDA')
     parser.add_argument(
         "--checkpoint_path",
         default="/tmp/",
@@ -42,69 +42,40 @@ def parse_args():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    if not torch.cuda.is_available():
-        logging.fatal("No available CUDA devices")
+    use_cpu = args.disable_cuda or not torch.cuda.is_available()
+    if args.world_size > 1 and use_cpu:
+        logging.fatal("CPU distributed training not supported.")
         sys.exit(1)
 
     logging.info("World size is : " + str(args.world_size))
 
-    if torch.cuda.device_count() < args.world_size:
-        logging.fatal(
-            "At least {} cuda devices required. {} found".format(
-                args.world_size, torch.cuda.device_count()
-            )
-        )
+    if not use_cpu and torch.cuda.device_count() < args.world_size:
+        logging.fatal("At least {} cuda devices required. {} found".format(
+            args.world_size, torch.cuda.device_count()))
         sys.exit(1)
 
     return args
 
 
-def compute_edit_distance(predictions, targets):
+def compute_edit_distance(predictions, targets, preprocessor):
     dist = 0
     n_tokens = 0
     for p, t in zip(predictions, targets):
-        dist += editdistance.eval(p.tolist(), t.tolist())
-        n_tokens += t.numel()
+        p, t = preprocessor.to_text(p), preprocessor.to_text(t)
+        dist += editdistance.eval(p, t)
+        n_tokens += len(t)
     return dist, n_tokens
 
 
-@dataclass
-class Meters:
-    loss = 0.0
-    num_samples = 0
-    num_tokens = 0
-    edit_distance = 0
-
-    def sync(self):
-        lst = [self.loss, self.num_samples, self.num_tokens, self.edit_distance]
-        # TODO: avoid this so that cpu training also works
-        lst_tensor = torch.FloatTensor(lst).cuda()
-        torch.distributed.all_reduce(lst_tensor)
-        (
-            self.loss,
-            self.num_samples,
-            self.num_tokens,
-            self.edit_distance,
-        ) = lst_tensor.tolist()
-
-    @property
-    def avg_loss(self):
-        return self.loss / self.num_samples
-
-    @property
-    def cer(self):
-        return self.edit_distance / self.num_tokens
-
-
 @torch.no_grad()
-def test(model, criterion, data_loader, world_rank, world_size):
+def test(model, criterion, data_loader, preprocessor, device, world_size):
     model.eval()
-    meters = Meters()
+    meters = utils.Meters()
     for inputs, targets in data_loader:
-        outputs = model(inputs.to(world_rank))
+        outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
-        dist, toks = compute_edit_distance(criterion.decode(outputs), targets)
+        dist, toks = compute_edit_distance(criterion.viterbi(outputs), targets, preprocessor)
         meters.edit_distance += dist
         meters.num_tokens += toks
     if world_size > 1:
@@ -141,8 +112,11 @@ def train(world_rank, args):
             rank=world_rank,
         )
 
-    # TODO: avoid this so that cpu training also works
-    torch.cuda.set_device(world_rank)
+    if not args.disable_cuda:
+        device = torch.device('cuda')
+        torch.cuda.set_device(world_rank)
+    else:
+        device = torch.device('cpu')
 
     # seed everything:
     seed = config.get("seed", None)
@@ -157,7 +131,11 @@ def train(world_rank, args):
 
     input_size = config["data"]["img_height"]
     data_path = config["data"]["data_path"]
-    preprocessor = dataset.Preprocessor(data_path, img_height=input_size)
+    preprocessor = dataset.Preprocessor(
+            data_path,
+            img_height=input_size,
+            tokens_path=config["data"].get("tokens", None),
+            lexicon_path=config["data"].get("lexicon", None))
     trainset = dataset.Dataset(data_path, preprocessor, split="train", augment=True)
     valset = dataset.Dataset(data_path, preprocessor, split="validation")
     train_loader = utils.data_loader(trainset, config, world_rank, args.world_size)
@@ -166,13 +144,13 @@ def train(world_rank, args):
     # setup criterion, model:
     criterion, output_size = models.load_criterion(
         config.get("criterion_type", "ctc"),
-        preprocessor.num_classes,
+        preprocessor,
         config.get("criterion", {}),
     )
     criterion = criterion.to(world_rank)
     model = models.load_model(
         config["model_type"], input_size, output_size, config["model"]
-    ).to(world_rank)
+    ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     logging.info(
         "Training {} model with {:,} parameters.".format(config["model_type"], n_params)
@@ -210,31 +188,29 @@ def train(world_rank, args):
     min_val_loss = float("inf")
     min_val_cer = float("inf")
 
-    # TODO use regular Timer when running on CPU
-    timers = utils.CudaTimer(
-        [
-            "ds_fetch",  # dataset sample fetch
-            "model_fwd",  # model forward
-            "crit_fwd",  # criterion forward
-            "bwd",  # backward (model + criterion)
-            "optim",  # optimizer step
-            "metrics",  # decode, cer
-            "train_total",  # total training
-            "test_total",  # total testing
-        ]
-    )
+    Timer = utils.CudaTimer if device.type == "cuda" else utils.Timer
+    timers = Timer([
+        "ds_fetch",  # dataset sample fetch
+        "model_fwd",  # model forward
+        "crit_fwd",  # criterion forward
+        "bwd",  # backward (model + criterion)
+        "optim",  # optimizer step
+        "metrics",  # viterbi, cer
+        "train_total",  # total training
+        "test_total",  # total testing
+    ])
     num_updates = 0
     for epoch in range(epochs):
         model.train()
         criterion.train()
         start_time = time.time()
-        meters = Meters()
+        meters = utils.Meters()
         timers.reset()
         timers.start("train_total").start("ds_fetch")
         for inputs, targets in train_loader:
             timers.stop("ds_fetch").start("model_fwd")
             optimizer.zero_grad()
-            outputs = model(inputs.to(world_rank))
+            outputs = model(inputs.to(device))
             timers.stop("model_fwd").start("crit_fwd")
             loss = criterion(outputs, targets)
             timers.stop("crit_fwd").start("bwd")
@@ -249,7 +225,9 @@ def train(world_rank, args):
             timers.stop("optim").start("metrics")
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
-            dist, toks = compute_edit_distance(criterion_module.decode(outputs), targets)
+            dist, toks = compute_edit_distance(criterion_module.viterbi(outputs),
+                                               targets,
+                                               preprocessor)
             meters.edit_distance += dist
             meters.num_tokens += toks
             timers.stop("metrics").start("ds_fetch")
@@ -266,9 +244,8 @@ def train(world_rank, args):
             )
             logging.info("Evaluating validation set..")
         timers.start("test_total")
-        val_loss, val_cer = test(
-            model, criterion_module, val_loader, world_rank, args.world_size
-        )
+        val_loss, val_cer = test(model, criterion_module, val_loader, preprocessor,
+                                 device, args.world_size)
         timers.stop("test_total")
         if world_rank == 0:
             checkpoint(model, criterion, args.checkpoint_path, (val_cer < min_val_cer))

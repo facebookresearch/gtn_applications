@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import utils
 
+import transducer
 
 class TDSBlock2d(torch.nn.Module):
     def __init__(self, in_channels, img_depth, kernel_size, dropout):
@@ -268,7 +269,7 @@ class CTC(torch.nn.Module):
                 log_probs, targets, input_lengths, target_lengths, blank=self.blank
             )
 
-    def decode(self, outputs):
+    def viterbi(self, outputs):
         predictions = torch.argmax(outputs, dim=2).T.to("cpu")
         collapsed_predictions = []
         for pred in predictions.split(1):
@@ -297,7 +298,7 @@ class ASG(torch.nn.Module):
         inputs = inputs.permute(1, 0, 2)  # T x B X C ->  B x T x C
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
-    def decode(self, outputs):
+    def viterbi(self, outputs):
         outputs = outputs.permute(1, 0, 2)  # T x B X C ->  B x T x C
         B, T, C = outputs.shape
         assert C == self.num_classes + self.num_replabels
@@ -306,7 +307,7 @@ class ASG(torch.nn.Module):
             prediction = []
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, False)
-            cpu_data = outputs[b].cpu(memory_format=torch.contiguous_format)
+            cpu_data = outputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create transition graph
@@ -339,12 +340,22 @@ def load_model(model_type, input_size, output_size, config):
         raise ValueError(f"Unknown model type {model_type}")
 
 
-def load_criterion(criterion_type, num_classes, config):
+def load_criterion(criterion_type, preprocessor, config):
+    num_tokens = preprocessor.num_tokens
     if criterion_type == "asg":
         num_replabels = config.get("num_replabels", 0)
-        return ASG(num_classes, num_replabels), num_classes + num_replabels
+        return ASG(num_tokens, num_replabels), num_tokens + num_replabels
     elif criterion_type == "ctc":
         use_pt = config.get("use_pt", True)
-        return CTC(num_classes, use_pt), num_classes + 1  # account for blank
+        return CTC(num_tokens, use_pt), num_tokens + 1  # account for blank
+    elif criterion_type == "transducer":
+        use_blank = config.get("blank", False)
+        criterion = transducer.Transducer(
+            preprocessor.tokens,
+            preprocessor.graphemes_to_index,
+            blank=use_blank,
+            allow_repeats=config.get("allow_repeats", True),
+            reduction="mean")
+        return criterion, num_tokens + use_blank
     else:
         raise ValueError(f"Unknown model type {criterion_type}")

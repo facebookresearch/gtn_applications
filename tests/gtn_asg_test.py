@@ -115,38 +115,39 @@ class TestASGCriterion(unittest.TestCase):
             1, T, N + rep
         )
         input = input.permute(1, 0, 2)
-        path = asg.decode(input)[0].tolist()
+        path = asg.viterbi(input)[0].tolist()
         self.assertEqual(len(expected_path), len(path))
         for i in range(0, len(path)):
             self.assertEqual(expected_path[i], path[i])
         self.assertTrue(path == expected_path)
 
-    # def test_jacobian(self):
-    #     T = 20
-    #     N = 15
-    #     B = 5
-    #     tgt = [
-    #         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    #         [1, 3],
-    #         [0, 2, 3],
-    #         [0, 2, 4, 6, 8],
-    #         [0, 1, 0, 1],
-    #     ]
+    @unittest.skip("Enable when gtn supports retain grad graph.")
+    def test_jacobian(self):
+        T = 20
+        N = 15
+        B = 5
+        tgt = [
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            [1, 3],
+            [0, 2, 3],
+            [0, 2, 4, 6, 8],
+            [0, 1, 0, 1],
+        ]
 
-    #     def fn(input, transition):
-    #         return ASGLoss(input, transition, tgt)
+        def fn(input, transition):
+            return ASGLoss(input, transition, tgt)
 
-    #     def fn_mean(input, transition):
-    #         return ASGLoss(input, transition, tgt, "mean")
+        def fn_mean(input, transition):
+            return ASGLoss(input, transition, tgt, "mean")
 
-    #     inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
-    #     transitions = torch.randn(N + 1, N, dtype=torch.float, requires_grad=True)
-    #     self.assertTrue(
-    #         gradcheck(fn, (inputs, transitions), eps=1e-2, rtol=1e-3, atol=1e-2)
-    #     )
-    #     self.assertTrue(
-    #         gradcheck(fn_mean, (inputs, transitions), eps=1e-2, rtol=1e-3, atol=1e-2)
-    #     )
+        inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
+        transitions = torch.randn(N + 1, N, dtype=torch.float, requires_grad=True)
+        self.assertTrue(
+            gradcheck(fn, (inputs, transitions), eps=1e-2, rtol=1e-3, atol=1e-2)
+        )
+        self.assertTrue(
+            gradcheck(fn_mean, (inputs, transitions), eps=1e-2, rtol=1e-3, atol=1e-2)
+        )
 
 
 if __name__ == "__main__":

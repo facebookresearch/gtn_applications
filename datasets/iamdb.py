@@ -118,29 +118,72 @@ class RandomResizeCrop:
 
 
 class Preprocessor:
-
-    def __init__(self, data_path, img_height):
+    """
+    A preprocessor for the IAMDB dataset.
+    Args:
+        data_path (str) : Path to the top level data directory.
+        img_heigh (int) : Height to resize extracted images.
+        tokens_path (str) (optional) : The path to the list of model output
+            tokens. If not provided the token set is built dynamically from
+            the graphemes of the tokenized text. NB: This argument does not
+            affect the tokenization of the text, only the number of output
+            classes.
+        lexicon_path (str) (optional) : A mapping of words to tokens. If
+            provided the preprocessor will split the text into words and
+            map them to the corresponding token. If not provided the text
+            will be tokenized at the grapheme level.
+    """
+    def __init__(
+            self,
+            data_path,
+            img_height,
+            tokens_path=None,
+            lexicon_path=None):
         forms = load_metadata(data_path)
 
-        # Build the token-to-index and index-to-token maps:
-        tokens = set()
+        # Load the set of graphemes:
+        graphemes = set()
         for _, form in forms.items():
             for line in form:
-                tokens.update(line["text"])
-        self.index_to_tokens = sorted(list(tokens))
+                graphemes.update(line["text"])
+        self.graphemes = sorted(graphemes)
+
+        # Build the token-to-index and index-to-token maps:
+        if tokens_path is not None:
+            with open(tokens_path, 'r') as fid:
+                self.tokens = sorted([l.strip() for l in fid])
+        else:
+            # Default to use graphemes if no tokens are provided
+            self.tokens = self.graphemes
+
+        if lexicon_path is not None:
+            with open(lexicon_path, 'r') as fid:
+                lexicon = (l.strip().split() for l in fid)
+                lexicon = {l[0] : l[1:] for l in lexicon}
+                self.lexicon = lexicon
+        else:
+            self.lexicon = None
+
+        self.graphemes_to_index = { t : i
+            for i, t in enumerate(self.graphemes)}
         self.tokens_to_index = { t : i
-            for i, t in enumerate(self.index_to_tokens)}
+            for i, t in enumerate(self.tokens)}
         self.img_height = img_height
 
     @property
-    def num_classes(self):
-        return len(self.index_to_tokens)
+    def num_tokens(self):
+        return len(self.tokens)
 
     def to_index(self, line):
-        return torch.tensor([self.tokens_to_index[t] for t in line])
+        tok_to_idx = self.graphemes_to_index
+        if self.lexicon is not None:
+            line = line.replace("|", " ").strip()
+            line = [t for w in line.split(" ") for t in self.lexicon[w]]
+            tok_to_idx = self.tokens_to_index
+        return torch.tensor([tok_to_idx[t] for t in line])
 
     def to_text(self, indices):
-        return "".join(self.index_to_tokens[i] for i in indices)
+        return "".join(self.tokens[i] for i in indices)
 
 
 def load_metadata(data_path):
@@ -151,7 +194,8 @@ def load_metadata(data_path):
             text = " ".join(line[8:])
             # remove garbage tokens:
             text = text.replace("#", "")
-            text = re.sub(r"\|+", "|", text)
+            # swap word sep from | to ▁
+            text = re.sub(r"\|+|\s", "▁", text)
             form_key = "-".join(line[0].split("-")[:-1])
             forms[form_key].append({
                 "key" : line[0],
