@@ -52,4 +52,15 @@ for i in range(ITERATIONS):
     loss  = crit(inputs, targets)
     loss.backward()
 
-print("Took {:.3f} ms".format((time.perf_counter() - start) * 1000 / ITERATIONS))
+print("Forward+Backward took {:.3f} ms".format((time.perf_counter() - start) * 1000 / ITERATIONS))
+
+# warmup:
+for i in range(5):
+    viterbi_path = crit.viterbi(inputs)
+
+start = time.perf_counter()
+
+for i in range(ITERATIONS):
+    viterbi_path = crit.viterbi(inputs)
+
+print("Viterbi took {:.3f} ms".format((time.perf_counter() - start) * 1000 / ITERATIONS))

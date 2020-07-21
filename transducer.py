@@ -67,7 +67,6 @@ def make_token_graph(token_list, blank=False, allow_repeats=True):
             for j in range(ntoks):
                 if i != j:
                     graph.add_arc(i + 1, j + 1, j, j)
-    graph.arc_sort(True)
     return graph
 
 
@@ -111,6 +110,7 @@ class Transducer(torch.nn.Module):
         if self.transitions is None:
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
         inputs = inputs.permute(1, 0, 2) # T x B X C ->  B x T x C
+        self.tokens.arc_sort(True)
         return TransducerLoss(
             inputs,
             targets,
@@ -120,10 +120,10 @@ class Transducer(torch.nn.Module):
             self.reduction)
 
     def viterbi(self, outputs):
+        outputs = outputs.permute(1, 0, 2)
         B, T, C = outputs.shape
-
+        self.tokens.arc_sort()
         def process(b):
-            prediction = []
             emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
             emissions.set_weights(cpu_data.data_ptr())
@@ -134,6 +134,7 @@ class Transducer(torch.nn.Module):
             # Left compose the viterbi path with the "alignment to token"
             # transducer to get the outputs:
             path = gtn.compose(gtn.viterbi_path(full_graph), self.tokens)
+
             # When there are ambiguous paths (allow_repeats is true), we take
             # the shortest:
             path = gtn.viterbi_path(path)

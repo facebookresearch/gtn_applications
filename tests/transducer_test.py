@@ -258,7 +258,7 @@ class TestTransducer(unittest.TestCase):
             graphemes_to_idx={"a": 0, "b": 1, "c": 2, "d": 3},
             blank=False,
         )
-        emissions = torch.stack([emissions1, emissions2], dim=0)
+        emissions = torch.stack([emissions1, emissions2], dim=1)
         predictions = transducer.viterbi(emissions)
         self.assertEqual([p.tolist() for p in predictions], labels)
 
@@ -271,7 +271,7 @@ class TestTransducer(unittest.TestCase):
             blank=True,
             allow_repeats=False,
         )
-        emissions = torch.stack([emissions1, emissions2], dim=0)
+        emissions = torch.stack([emissions1, emissions2], dim=1)
         predictions = transducer.viterbi(emissions)
         self.assertEqual([p.tolist() for p in predictions], labels)
 
