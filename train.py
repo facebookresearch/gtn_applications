@@ -61,7 +61,7 @@ def compute_edit_distance(predictions, targets, preprocessor):
     dist = 0
     n_tokens = 0
     for p, t in zip(predictions, targets):
-        p, t = preprocessor.to_text(p), preprocessor.to_text(t)
+        p, t = preprocessor.tokens_to_text(p), preprocessor.to_text(t)
         dist += editdistance.eval(p, t)
         n_tokens += len(t)
     return dist, n_tokens

@@ -14,6 +14,7 @@ SPLITS = {
     "test" : ["validationset2", "testset"],
 }
 
+WORDSEP = "▁"
 
 class Dataset(torch.utils.data.Dataset):
 
@@ -58,7 +59,6 @@ class Dataset(torch.utils.data.Dataset):
                 img_file = os.path.join(data_path, f"{key}.png")
                 images.append((img_file, line["box"], preprocessor.img_height))
                 text.append(line["text"])
-
         with mp.Pool(processes=16) as pool:
             images = pool.map(load_image, images)
         self.dataset = list(zip(images, text))
@@ -177,8 +177,7 @@ class Preprocessor:
     def to_index(self, line):
         tok_to_idx = self.graphemes_to_index
         if self.lexicon is not None:
-            line = line.replace("|", " ").strip()
-            line = [t for w in line.split(" ") for t in self.lexicon[w]]
+            line = [t for w in line.split(WORDSEP) for t in self.lexicon[w]]
             tok_to_idx = self.tokens_to_index
         return torch.tensor([tok_to_idx[t] for t in line])
 
@@ -187,11 +186,14 @@ class Preprocessor:
         encoding = self.graphemes
         if self.lexicon is not None:
             encoding = self.tokens
-        return "".join(encoding[i] for i in indices)
+        return self._post_process(encoding[i] for i in indices)
 
     def tokens_to_text(self, indices):
-        return "".join(self.tokens[i] for i in indices)
+        return self._post_process(self.tokens[i] for i in indices)
 
+    def _post_process(self, indices):
+        # ignore preceding and trailling spaces
+        return "".join(indices).strip(WORDSEP)
 
 def load_metadata(data_path):
     forms = collections.defaultdict(list)
@@ -201,8 +203,8 @@ def load_metadata(data_path):
             text = " ".join(line[8:])
             # remove garbage tokens:
             text = text.replace("#", "")
-            # swap word sep from | to ▁
-            text = re.sub(r"\|+|\s", "▁", text)
+            # swap word sep from | to WORDSEP
+            text = re.sub(r"\|+|\s", WORDSEP, text).strip(WORDSEP)
             form_key = "-".join(line[0].split("-")[:-1])
             forms[form_key].append({
                 "key" : line[0],
