@@ -183,6 +183,13 @@ class Preprocessor:
         return torch.tensor([tok_to_idx[t] for t in line])
 
     def to_text(self, indices):
+        # Roughly the inverse of `to_index`
+        encoding = self.graphemes
+        if self.lexicon is not None:
+            encoding = self.tokens
+        return "".join(encoding[i] for i in indices)
+
+    def tokens_to_text(self, indices):
         return "".join(self.tokens[i] for i in indices)
 
 

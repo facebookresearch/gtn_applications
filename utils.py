@@ -15,7 +15,7 @@ def thread_init():
     torch.set_num_threads(1)
 
 
-def data_loader(dataset, config, world_rank, world_size):
+def data_loader(dataset, config, world_rank=0, world_size=1):
     num_samples = config["data"].get("num_samples", None)
     if num_samples is not None:
         logging.info(f"Using {num_samples} of {len(dataset)}.")
