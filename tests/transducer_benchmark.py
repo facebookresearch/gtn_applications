@@ -26,7 +26,7 @@ if len(sys.argv) > 1:
     B = int(sys.argv[1])
 
 ITERATIONS = 20
-inputs = torch.randn(T, B, N, dtype=torch.float, requires_grad=True).cuda()
+inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True).cuda()
 
 targets = []
 for b in range(B):

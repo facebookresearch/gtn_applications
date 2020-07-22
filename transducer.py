@@ -109,7 +109,6 @@ class Transducer(torch.nn.Module):
     def forward(self, inputs, targets):
         if self.transitions is None:
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
-        inputs = inputs.permute(1, 0, 2) # T x B X C ->  B x T x C
         self.tokens.arc_sort(True)
         return TransducerLoss(
             inputs,
@@ -120,7 +119,6 @@ class Transducer(torch.nn.Module):
             self.reduction)
 
     def viterbi(self, outputs):
-        outputs = outputs.permute(1, 0, 2)
         B, T, C = outputs.shape
         self.tokens.arc_sort()
         def process(b):

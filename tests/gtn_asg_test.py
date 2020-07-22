@@ -111,11 +111,10 @@ class TestASGCriterion(unittest.TestCase):
             param.data = torch.tensor(
                 trans_list, device=self.device, dtype=torch.float32
             ).view(N + rep + 1, N + rep)
-        input = torch.tensor(input_list, device=self.device, dtype=torch.float32).view(
+        inputs = torch.tensor(input_list, device=self.device, dtype=torch.float32).view(
             1, T, N + rep
         )
-        input = input.permute(1, 0, 2)
-        path = asg.viterbi(input)[0].tolist()
+        path = asg.viterbi(inputs)[0].tolist()
         self.assertEqual(len(expected_path), len(path))
         for i in range(0, len(path)):
             self.assertEqual(expected_path[i], path[i])
@@ -134,11 +133,11 @@ class TestASGCriterion(unittest.TestCase):
             [0, 1, 0, 1],
         ]
 
-        def fn(input, transition):
-            return ASGLoss(input, transition, tgt)
+        def fn(inputs, transition):
+            return ASGLoss(inputs, transition, tgt)
 
-        def fn_mean(input, transition):
-            return ASGLoss(input, transition, tgt, "mean")
+        def fn_mean(inputs, transition):
+            return ASGLoss(inputs, transition, tgt, "mean")
 
         inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
         transitions = torch.randn(N + 1, N, dtype=torch.float, requires_grad=True)

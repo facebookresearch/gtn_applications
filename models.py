@@ -97,8 +97,8 @@ class TDS2d(torch.nn.Module):
         B, C, H, W = outputs.shape
         outputs = outputs.reshape(B, C * H, W)
 
-        # outputs shape: [W, B, output_size]
-        return self.linear(outputs.permute(2, 0, 1))
+        # outputs shape: [B, W, output_size]
+        return self.linear(outputs.permute(0, 2, 1))
 
 
 class TDSBlock(torch.nn.Module):
@@ -148,8 +148,6 @@ class TDSBlock(torch.nn.Module):
 class TDS(torch.nn.Module):
     def __init__(self, input_size, output_size, tds_groups, kernel_size, dropout):
         super(TDS, self).__init__()
-        # TODO might be worth adding a 2D front-end or changing TDS to be a grouped conv
-        # downsample layer -> TDS group -> ... -> Linear output layer
         modules = []
         in_channels = input_size
         for tds_group in tds_groups:
@@ -180,8 +178,8 @@ class TDS(torch.nn.Module):
     def forward(self, inputs):
         # inputs shape: [B, H, W]
         outputs = self.tds(inputs)
-        # outputs shape: [W, B, output_size]
-        return self.linear(outputs.permute(2, 0, 1))
+        # outputs shape: [B, W, output_size]
+        return self.linear(outputs.permute(0, 2, 1))
 
 
 class RNN(torch.nn.Module):
@@ -230,21 +228,20 @@ class RNN(torch.nn.Module):
             num_layers=num_layers,
             dropout=dropout,
             bidirectional=bidirectional,
+            batch_first=True,
         )
         self.linear = torch.nn.Linear(
             hidden_size + bidirectional * hidden_size, output_size
         )
 
     def forward(self, inputs):
-        # inputs shape: [batch size, img height (e.g. input size), img width (e.g. sequence length)]
-        # outputs shape: [img width, batch size, num classes]
+        # inputs shape: [B, H, W]
         outputs = inputs.unsqueeze(1)
         outputs = self.convs(outputs)
         b, c, h, w = outputs.shape
-        outputs = outputs.reshape(b, c * h, w)
-
-        outputs = outputs.permute(2, 0, 1)
+        outputs = outputs.reshape(b, c * h, w).permute(0, 2, 1)
         outputs, _ = self.rnn(outputs)
+        # outputs shape: [B, W, output_size]
         return self.linear(outputs)
 
 
@@ -257,20 +254,20 @@ class CTC(torch.nn.Module):
     def forward(self, inputs, targets):
         log_probs = torch.nn.functional.log_softmax(inputs, dim=2)
 
-        if not self.use_pt:
-            targets = [t.tolist() for t in targets]
-            log_probs = log_probs.permute(1, 0, 2)  # T x B X C ->  B x T x C
-            return utils.CTCLoss(log_probs, targets, self.blank, "mean")
-        else:
-            input_lengths = [inputs.shape[0]] * inputs.shape[1]
+        if self.use_pt:
+            log_probs = log_probs.permute(1, 0, 2)  # expects [T, B, C]
+            input_lengths = [inputs.shape[1]] * inputs.shape[0]
             target_lengths = [t.numel() for t in targets]
             targets = torch.cat(targets)
             return torch.nn.functional.ctc_loss(
                 log_probs, targets, input_lengths, target_lengths, blank=self.blank
             )
+        else:
+            targets = [t.tolist() for t in targets]
+            return utils.CTCLoss(log_probs, targets, self.blank, "mean")
 
     def viterbi(self, outputs):
-        predictions = torch.argmax(outputs, dim=2).T.to("cpu")
+        predictions = torch.argmax(outputs, dim=2).to("cpu")
         collapsed_predictions = []
         for pred in predictions.split(1):
             pred = pred.squeeze()
@@ -295,13 +292,12 @@ class ASG(torch.nn.Module):
 
     def forward(self, inputs, targets):
         targets = [t.tolist() for t in targets]
-        inputs = inputs.permute(1, 0, 2)  # T x B X C ->  B x T x C
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
     def viterbi(self, outputs):
-        outputs = outputs.permute(1, 0, 2)  # T x B X C ->  B x T x C
         B, T, C = outputs.shape
-        assert C == self.num_classes + self.num_replabels
+        assert C == self.num_classes + self.num_replabels, \
+            "Wrong number of classes in output."
 
         def process(b):
             prediction = []

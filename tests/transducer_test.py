@@ -16,7 +16,7 @@ class TestTransducer(unittest.TestCase):
     def test_fwd_trivial(self):
         T = 3
         N = 2
-        emissions = torch.FloatTensor([1.0, 0.0, 0.0, 1.0, 1.0, 0.0]).view(T, 1, N)
+        emissions = torch.FloatTensor([1.0, 0.0, 0.0, 1.0, 1.0, 0.0]).view(1, T, N)
         log_probs = torch.log(emissions)
 
         # Check without blank:
@@ -40,7 +40,7 @@ class TestTransducer(unittest.TestCase):
         T = 3
         N = 4
         labels = [[1, 2]]
-        emissions = torch.FloatTensor([1.0] * T * N).view(T, 1, N)
+        emissions = torch.FloatTensor([1.0] * T * N).view(1, T, N)
         log_probs = torch.log(emissions)
         log_probs = torch.nn.functional.log_softmax(torch.log(emissions), 2)
         transducer = Transducer(
@@ -68,7 +68,7 @@ class TestTransducer(unittest.TestCase):
             requires_grad=True,
         )
         # fmt: on
-        log_emissions = torch.log(emissions.view(T, 1, N))
+        log_emissions = torch.log(emissions.view(1, T, N))
         log_emissions.retain_grad()
         transducer = Transducer(
             tokens=["a", "b", "c", "d", "e"],
@@ -86,7 +86,7 @@ class TestTransducer(unittest.TestCase):
             0.0357786, 0.633813,  -0.678582, 0.00249248, 0.00272882, 0.0037688,
             0.0663296, -0.356151, 0.280111,  0.00283995, 0.0035545,  0.00331533,
             -0.541765, 0.396634,  0.123377,  0.00648837, 0.00903441, 0.00623107,
-        )).view(T, 1, N)
+        )).view(1, T, N)
         # fmt: on
         self.assertTrue(log_emissions.grad.allclose(expected_grad))
 
@@ -103,7 +103,7 @@ class TestTransducer(unittest.TestCase):
             requires_grad=True,
         )
         # fmt: on
-        log_emissions = torch.log(emissions.view(T, 1, N))
+        log_emissions = torch.log(emissions.view(1, T, N))
         log_emissions.retain_grad()
         transducer = Transducer(
             tokens=["a", "b", "c", "d", "e"],
@@ -122,14 +122,14 @@ class TestTransducer(unittest.TestCase):
             0.230246,  0.450868,  0.0389607, 0.038309,  0.0391602, -0.797544,
             0.280884,  -0.570478, 0.0326593, 0.0339046, 0.0326856, 0.190345,
             -0.576714, 0.315517,  0.0338439, 0.0393744, 0.0339315, 0.154046,
-        )).view(T, 1, N)
+        )).view(1, T, N)
         # fmt: on
         self.assertTrue(log_emissions.grad.allclose(expected_grad))
 
     def test_simple_decomposition(self):
         T = 5
         tokens = ["a", "b", "ab", "ba", "aba"]
-        scores = torch.randn((T, 1, len(tokens)), requires_grad=True)
+        scores = torch.randn((1, T, len(tokens)), requires_grad=True)
         labels = [[0, 1, 0]]
         transducer = Transducer(tokens=tokens, graphemes_to_idx={"a": 0, "b": 1})
 
@@ -178,7 +178,7 @@ class TestTransducer(unittest.TestCase):
         gtn.backward(expected_loss)
 
         expected_grad = torch.tensor(emissions.grad().weights_to_numpy())
-        expected_grad = expected_grad.view((T, 1, len(tokens)))
+        expected_grad = expected_grad.view((1, T, len(tokens)))
         self.assertTrue(
             torch.allclose(scores.grad, expected_grad, rtol=1e-4, atol=1e-5)
         )
@@ -197,7 +197,7 @@ class TestTransducer(unittest.TestCase):
 
         tokens = list((t,) for t in range(N - 1))
         graphemes_to_idx = {t : t for t in range(N - 1)}
-        inputs = torch.randn(T, B, N, dtype=torch.float, requires_grad=True)
+        inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
 
         # With and without target length reduction:
         for reduction in ["none", "mean"]:
@@ -207,8 +207,7 @@ class TestTransducer(unittest.TestCase):
                 blank=True,
                 allow_repeats=False,
                 reduction=reduction)
-            ctc_inputs = torch.nn.functional.log_softmax(
-                inputs.permute(1, 0, 2).contiguous(), 2)
+            ctc_inputs = torch.nn.functional.log_softmax(inputs, 2)
             ctc_result = CTCLoss(ctc_inputs, tgt, N - 1, reduction)
             ctc_result.backward()
             ctc_grad = inputs.grad
@@ -258,7 +257,7 @@ class TestTransducer(unittest.TestCase):
             graphemes_to_idx={"a": 0, "b": 1, "c": 2, "d": 3},
             blank=False,
         )
-        emissions = torch.stack([emissions1, emissions2], dim=1)
+        emissions = torch.stack([emissions1, emissions2], dim=0)
         predictions = transducer.viterbi(emissions)
         self.assertEqual([p.tolist() for p in predictions], labels)
 
@@ -271,7 +270,7 @@ class TestTransducer(unittest.TestCase):
             blank=True,
             allow_repeats=False,
         )
-        emissions = torch.stack([emissions1, emissions2], dim=1)
+        emissions = torch.stack([emissions1, emissions2], dim=0)
         predictions = transducer.viterbi(emissions)
         self.assertEqual([p.tolist() for p in predictions], labels)
 
