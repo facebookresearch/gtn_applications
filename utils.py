@@ -26,7 +26,7 @@ def data_loader(dataset, config, world_rank=0, world_size=1):
             dataset, config["optim"]["batch_size"], world_rank, world_size
         ),
         collate_fn=padding_collate,
-        num_workers=1,
+        num_workers=0,
     )
 
 
