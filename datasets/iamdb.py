@@ -232,3 +232,9 @@ if __name__ == "__main__":
     mean = torch.mean(images)
     std = torch.std(images)
     print(f"Data mean {mean} and standard deviation {std}.")
+
+    # Compute average lengths of images and targets:
+    avg_im_w = sum(w for (w, _), _ in trainset.sample_sizes()) / len(trainset)
+    avg_tgt_l = sum(l for _, l in trainset.sample_sizes()) / len(trainset)
+    print(f"Average image width {avg_im_w}")
+    print(f"Average target length {avg_tgt_l}")
