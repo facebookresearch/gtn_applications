@@ -7,6 +7,7 @@ import utils
 
 import transducer
 
+
 class TDSBlock2d(torch.nn.Module):
     def __init__(self, in_channels, img_depth, kernel_size, dropout):
         super(TDSBlock2d, self).__init__()
@@ -296,8 +297,9 @@ class ASG(torch.nn.Module):
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
-        assert C == self.num_classes + self.num_replabels, \
-            "Wrong number of classes in output."
+        assert (
+            C == self.num_classes + self.num_replabels
+        ), "Wrong number of classes in output."
 
         def process(b):
             prediction = []
@@ -351,7 +353,8 @@ def load_criterion(criterion_type, preprocessor, config):
             preprocessor.graphemes_to_index,
             blank=use_blank,
             allow_repeats=config.get("allow_repeats", True),
-            reduction="mean")
+            reduction="mean",
+        )
         return criterion, num_tokens + use_blank
     else:
         raise ValueError(f"Unknown model type {criterion_type}")

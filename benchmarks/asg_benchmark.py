@@ -4,38 +4,35 @@ import torch
 import time
 
 sys.path.append("..")
-from utils import CTCLoss
+from utils import ASGLoss
 
-if hasattr(sys.flags, "nogil") and sys.flags.nogil:
+if getattr(sys.flags, "nogil", False) and sys.flags.nogil:
     print("Running without GIL")
 else:
     print("Running with GIL")
 
 torch.set_num_threads(1)
-T = 1000
-L = 100
-N = 28
+T = 250
+L = 44
+N = 80
 B = int(sys.argv[1])
 ITERATIONS = 100
 inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True).cuda()
-tgt = []
-for b in range(B):
-    arr = []
-    for l in range(L):
-        arr.append(random.randint(0, N - 2))
-    tgt.append(arr)
+transitions = torch.randn(N + 1, N, dtype=torch.float, requires_grad=True).cuda()
+tgt = torch.randint(N - 2, (B, L)).split(1)
+tgt = [t.tolist()[0] for t in tgt]
 
 # warmup
 for i in range(5):
-    if inputs.grad is not None:
-        inputs.grad.zero_()
-    op = CTCLoss(inputs, tgt, N - 1)
+    inputs.grad = None
+    transitions.grad = None
+    op = ASGLoss(inputs, transitions, tgt)
     op.backward()
 
 start = time.perf_counter()
 for i in range(ITERATIONS):
-    if inputs.grad is not None:
-        inputs.grad.zero_()
-    op = CTCLoss(inputs, tgt, N - 1)
+    inputs.grad = None
+    transitions.grad = None
+    op = ASGLoss(inputs, transitions, tgt)
     op.backward()
 print("Took", (time.perf_counter() - start) * 1000 / ITERATIONS, "ms")

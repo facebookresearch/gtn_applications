@@ -12,25 +12,29 @@ import utils
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Evalaute a handwriting recognition model.")
-    parser.add_argument("--config", type=str,
-        help="The json configuration file used for training."
+        description="Evalaute a handwriting recognition model."
     )
-    parser.add_argument('--disable_cuda', action='store_true', help='Disable CUDA')
+    parser.add_argument(
+        "--config", type=str, help="The json configuration file used for training."
+    )
+    parser.add_argument("--disable_cuda", action="store_true", help="Disable CUDA")
     parser.add_argument(
         "--checkpoint_path",
         default="/tmp/",
         type=str,
         help="Checkpoint path for loading the model",
     )
-    parser.add_argument("--load_last", default=False, action='store_true',
+    parser.add_argument(
+        "--load_last",
+        default=False,
+        action="store_true",
         help="Load the last saved model instead of the best model.",
     )
     parser.add_argument(
         "--split",
         default="validation",
         type=str,
-        choices=['train', 'validation', 'test'],
+        choices=["train", "validation", "test"],
         help="Data split to test on (default: 'validation')",
     )
     args = parser.parse_args()
@@ -54,9 +58,9 @@ def test(args):
         config = json.load(fid)
 
     if not args.disable_cuda:
-        device = torch.device('cuda')
+        device = torch.device("cuda")
     else:
-        device = torch.device('cpu')
+        device = torch.device("cpu")
 
     dataset = config["data"]["dataset"]
     if not (hasattr(datasets, dataset)):
@@ -66,17 +70,16 @@ def test(args):
     input_size = config["data"]["img_height"]
     data_path = config["data"]["data_path"]
     preprocessor = dataset.Preprocessor(
-            data_path,
-            img_height=input_size,
-            tokens_path=config["data"].get("tokens", None),
-            lexicon_path=config["data"].get("lexicon", None))
+        data_path,
+        img_height=input_size,
+        tokens_path=config["data"].get("tokens", None),
+        lexicon_path=config["data"].get("lexicon", None),
+    )
     data = dataset.Dataset(data_path, preprocessor, split=args.split)
     loader = utils.data_loader(data, config)
 
     criterion, output_size = models.load_criterion(
-        config.get("criterion_type", "ctc"),
-        preprocessor,
-        config.get("criterion", {}),
+        config.get("criterion_type", "ctc"), preprocessor, config.get("criterion", {}),
     )
     criterion = criterion.to(device)
     model = models.load_model(
@@ -97,12 +100,11 @@ def test(args):
             print("CER: {:.3f}".format(dist / len(t)))
             print("HYP:", "".join(p))
             print("REF", "".join(t))
-            print("="*80)
+            print("=" * 80)
             meters.edit_distance += dist
             meters.num_tokens += len(t)
 
-    logging.info("Loss {:.3f}, CER {:.3f}, ".format(
-        meters.avg_loss, meters.cer))
+    logging.info("Loss {:.3f}, CER {:.3f}, ".format(meters.avg_loss, meters.cer))
 
 
 def main():

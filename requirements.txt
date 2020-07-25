@@ -1,1 +1,2 @@
 editdistance==0.5.3
+black
