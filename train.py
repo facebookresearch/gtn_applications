@@ -10,12 +10,11 @@ import torch
 import datasets
 import models
 import utils
-import transducer
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="IAM Handwriting Recognition with Pytorch.")
+        description="Train a handwriting recognition model.")
     parser.add_argument("--config", type=str,
         help="A json configuration file for experiment."
     )
@@ -147,7 +146,7 @@ def train(world_rank, args):
         preprocessor,
         config.get("criterion", {}),
     )
-    criterion = criterion.to(world_rank)
+    criterion = criterion.to(device)
     model = models.load_model(
         config["model_type"], input_size, output_size, config["model"]
     ).to(device)
