@@ -89,17 +89,18 @@ class Transducer(torch.nn.Module):
             unambiguous in the sense that the same input cannot transduce to
             different outputs.
     """
+
     def __init__(
-            self,
-            tokens,
-            graphemes_to_idx,
-            n_gram=0,
-            blank=False,
-            allow_repeats=True,
-            reduction="none"):
+        self,
+        tokens,
+        graphemes_to_idx,
+        n_gram=0,
+        blank=False,
+        allow_repeats=True,
+        reduction="none",
+    ):
         super(Transducer, self).__init__()
-        self.tokens = make_token_graph(
-            tokens, blank=blank, allow_repeats=allow_repeats)
+        self.tokens = make_token_graph(tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         if n_gram > 0:
             raise NotImplementedError("Transition graphs not yet implemented.")
@@ -111,16 +112,13 @@ class Transducer(torch.nn.Module):
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
         self.tokens.arc_sort(True)
         return TransducerLoss(
-            inputs,
-            targets,
-            self.tokens,
-            self.lexicon,
-            self.transitions,
-            self.reduction)
+            inputs, targets, self.tokens, self.lexicon, self.transitions, self.reduction
+        )
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
         self.tokens.arc_sort()
+
         def process(b):
             emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
@@ -147,13 +145,15 @@ class Transducer(torch.nn.Module):
 
 
 class TransducerLossFunction(torch.autograd.Function):
-
     @staticmethod
-    def forward(ctx, inputs, targets, tokens, lexicon, transitions=None, reduction="none"):
+    def forward(
+        ctx, inputs, targets, tokens, lexicon, transitions=None, reduction="none"
+    ):
         B, T, C = inputs.shape
         losses = [None] * B
         emissions_graphs = [None] * B
         transitions_graphs = [None] * B
+
         def process(b):
             # Create emissions graph:
             emissions = gtn.linear_graph(T, C, inputs.requires_grad)
@@ -163,13 +163,13 @@ class TransducerLossFunction(torch.autograd.Function):
             target.arc_sort(True)
 
             # Create token to grapheme decomposition graph
-            tokens_target = gtn.remove(
-                gtn.project_output(gtn.compose(target, lexicon)))
+            tokens_target = gtn.remove(gtn.project_output(gtn.compose(target, lexicon)))
             tokens_target.arc_sort()
 
             # Create alignment graph:
             alignments = gtn.project_input(
-                gtn.remove(gtn.compose(tokens, tokens_target)))
+                gtn.remove(gtn.compose(tokens, tokens_target))
+            )
             alignments.arc_sort()
 
             num = gtn.forward_score(gtn.intersect(emissions, alignments))
@@ -206,13 +206,15 @@ class TransducerLossFunction(torch.autograd.Function):
         scales = ctx.scales
         B, T, C = ctx.input_shape
         calc_emissions = emissions_graphs[0].calc_grad()
-        calc_transitions = transitions_graphs[0] is not None \
-                and transitions_graphs[0].calc_grad()
+        calc_transitions = (
+            transitions_graphs[0] is not None and transitions_graphs[0].calc_grad()
+        )
         input_grad = transitions_grad = None
         if calc_emissions:
             input_grad = torch.empty((B, T, C))
         if calc_transitions:
             transitions_grad = torch.empty(transtions_graphs[0].num_arcs())
+
         def process(b):
             gtn.backward(losses[b], False)
             emissions = emissions_graphs[b]
@@ -225,7 +227,6 @@ class TransducerLossFunction(torch.autograd.Function):
                 raise NotImplementedError("Transitions not implemented yet.")
             # TODO, clean-up emissions and transitions graphs?
 
-
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
@@ -234,17 +235,17 @@ class TransducerLossFunction(torch.autograd.Function):
         if input_grad is not None:
             if grad_output.is_cuda:
                 input_grad = input_grad.cuda()
-            input_grad *= (grad_output / B)
+            input_grad *= grad_output / B
         if transitions_grad is not None:
             if grad_output.is_cuda:
                 transitions_grad = transitions_grad.cuda()
-            transitions_grad *= (grad_output / B)
+            transitions_grad *= grad_output / B
 
         return (
             input_grad,
-            None, # target
-            None, # tokens
-            None, # lex
+            None,  # target
+            None,  # tokens
+            None,  # lex
             transitions_grad,
             None,
         )
