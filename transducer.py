@@ -109,7 +109,7 @@ class Transducer(torch.nn.Module):
             could be a list of sub-word tokens.
         graphemes_to_idx (dict) : A dictionary mapping grapheme units (e.g.
             "a", "b", ..) to their corresponding integer index.
-        n_gram (int) : Order of the token-level transition model. If `n_gram=0`
+        ngram (int) : Order of the token-level transition model. If `ngram=0`
             then no transition model is used.
         blank (boolean) : Toggle the use of an optional blank inbetween tokens.
         allow_repeats (boolean) : If false, then we don't allow paths with
@@ -122,7 +122,7 @@ class Transducer(torch.nn.Module):
         self,
         tokens,
         graphemes_to_idx,
-        n_gram=0,
+        ngram=0,
         blank=False,
         allow_repeats=True,
         reduction="none",
@@ -130,9 +130,9 @@ class Transducer(torch.nn.Module):
         super(Transducer, self).__init__()
         self.tokens = make_token_graph(tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
-        self.n_gram = n_gram
-        if n_gram > 0:
-            self.transitions = make_transitions_graph(n_gram, len(tokens) + blank, True)
+        self.ngram = ngram
+        if ngram > 0:
+            self.transitions = make_transitions_graph(ngram, len(tokens) + blank, True)
             self.transitions.arc_sort()
             self.transition_params = torch.nn.Parameter(
                 torch.zeros(self.transitions.num_arcs()))
