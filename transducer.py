@@ -138,6 +138,7 @@ class Transducer(torch.nn.Module):
                 torch.zeros(self.transitions.num_arcs()))
         else:
             self.transitions = None
+            self.transition_params = None
         self.reduction = reduction
 
     def forward(self, inputs, targets):
@@ -283,7 +284,7 @@ class TransducerLossFunction(torch.autograd.Function):
             transition_grad = torch.tensor(grad).to(grad_output.device)
             transitions.zero_grad()
         else:
-            transitions_grad = None
+            transition_grad = None
 
         return (
             input_grad,

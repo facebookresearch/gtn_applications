@@ -13,11 +13,6 @@ from torch.autograd import gradcheck
 
 
 class TestTransducer(unittest.TestCase):
-    def setUp(self):
-        self.device = torch.device("cpu")
-#        if torch.cuda.device_count() > 0:
-#            self.device = torch.device("cuda")
-
 
     def test_fwd_trivial(self):
         T = 3
@@ -394,7 +389,6 @@ class TestTransducer(unittest.TestCase):
                     [0.1050, -0.8265, 0.1714, 0.1917, 0.1488, 0.2094],
                 ],
             ],
-            device=self.device,
         )
         expected_grad = expected_grad / B
         self.assertTrue(emissions.grad.allclose(expected_grad, rtol=1e-03))
@@ -408,7 +402,6 @@ class TestTransducer(unittest.TestCase):
                     [0.3866, 0.3321, 0.3447, 0.3664, -0.2163, 0.3039],
                     [0.3640, -0.6943, 0.2988, -0.6722, 0.3215, -0.1860],
                 ],
-                device=self.device,
             ).view(N, N)
             / B
         )
@@ -422,12 +415,10 @@ class TestTransducer(unittest.TestCase):
         inputs = torch.tensor(
             [0, 0, 0, 7, 0, 5, 4, 3, 0, 5, 8, 5, 0, 5, 4, 3],
             dtype=torch.float32,
-            device=self.device,
         ).view(1, T, N)
         transitions = torch.tensor(
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 2, 0],
             dtype=torch.float32,
-            device=self.device,
         ).view(N + 1, N)
         expected_path = [3, 2, 1]
         tokens = [(n,) for n in range(N)]
