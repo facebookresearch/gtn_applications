@@ -26,7 +26,7 @@ def data_loader(dataset, config, world_rank=0, world_size=1):
             dataset, config["optim"]["batch_size"], world_rank, world_size
         ),
         collate_fn=padding_collate,
-        num_workers=0,
+        num_workers=int(world_size > 1),
     )
 
 
@@ -90,9 +90,7 @@ class Meters:
     edit_distance = 0
 
     def sync(self):
-        lst = [
-            self.loss, self.num_samples, self.num_tokens, self.edit_distance
-        ]
+        lst = [self.loss, self.num_samples, self.num_tokens, self.edit_distance]
         # TODO: avoid this so that distributed cpu training also works
         lst_tensor = torch.FloatTensor(lst).cuda()
         torch.distributed.all_reduce(lst_tensor)
@@ -174,7 +172,7 @@ def pack_replabels(tokens, num_replabels):
             if num > 0:
                 new_tokens.append(num - 1)
                 num = 0
-            new_tokens.append(token)
+            new_tokens.append(token + num_replabels)
             prev_token = token
     if num > 0:
         new_tokens.append(num - 1)
@@ -189,11 +187,11 @@ def unpack_replabels(tokens, num_replabels):
     prev_token = -1
     for token in tokens:
         if token >= num_replabels:
-            new_tokens.append(token)
+            new_tokens.append(token - num_replabels)
             prev_token = token
         elif prev_token != -1:
             for i in range(token + 1):
-                new_tokens.append(prev_token)
+                new_tokens.append(prev_token - num_replabels)
             prev_token = -1
     return new_tokens
 
@@ -249,6 +247,7 @@ class CTCLossFunction(torch.autograd.Function):
                 g_criterion.add_arc(l - 1, l, label)
             if l % 2 and l > 1 and label != target[idx - 1]:
                 g_criterion.add_arc(l - 2, l, label)
+        g_criterion.arc_sort(False)
         return g_criterion
 
     @staticmethod
@@ -267,7 +266,6 @@ class CTCLossFunction(torch.autograd.Function):
 
             # create criterion graph
             g_criterion = CTCLossFunction.create_ctc_graph(targets[b], blank_idx)
-
             # compose the graphs
             g_loss = gtn.negate(
                 gtn.forward_score(gtn.intersect(g_emissions, g_criterion))
@@ -340,6 +338,8 @@ class ASGLossFunction(torch.autograd.Function):
                 g_transitions.add_arc(j + 1, i + 1, i)  # p(i | j)
         cpu_data = transitions.cpu().contiguous()
         g_transitions.set_weights(cpu_data.data_ptr())
+        g_transitions.mark_arc_sorted(False)
+        g_transitions.mark_arc_sorted(True)
         return g_transitions
 
     @staticmethod
@@ -351,6 +351,7 @@ class ASGLossFunction(torch.autograd.Function):
             g_fal.add_node(False, l == L)
             g_fal.add_arc(l - 1, l, target[l - 1])
             g_fal.add_arc(l, l, target[l - 1])
+        g_fal.arc_sort(True)
         return g_fal
 
     @staticmethod

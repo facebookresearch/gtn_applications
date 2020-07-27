@@ -117,17 +117,18 @@ class Transducer(torch.nn.Module):
             unambiguous in the sense that the same input cannot transduce to
             different outputs.
     """
+
     def __init__(
-            self,
-            tokens,
-            graphemes_to_idx,
-            n_gram=0,
-            blank=False,
-            allow_repeats=True,
-            reduction="none"):
+        self,
+        tokens,
+        graphemes_to_idx,
+        n_gram=0,
+        blank=False,
+        allow_repeats=True,
+        reduction="none",
+    ):
         super(Transducer, self).__init__()
-        self.tokens = make_token_graph(
-            tokens, blank=blank, allow_repeats=allow_repeats)
+        self.tokens = make_token_graph(tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         self.n_gram = n_gram
         if n_gram > 0:
@@ -160,6 +161,7 @@ class Transducer(torch.nn.Module):
             self.transitions.set_weights(cpu_data.data_ptr())
 
         self.tokens.arc_sort()
+
         def process(b):
             emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
@@ -186,7 +188,6 @@ class Transducer(torch.nn.Module):
 
 
 class TransducerLossFunction(torch.autograd.Function):
-
     @staticmethod
     def forward(
             ctx, inputs, targets, tokens, lexicon,
@@ -210,13 +211,13 @@ class TransducerLossFunction(torch.autograd.Function):
             target.arc_sort(True)
 
             # Create token to grapheme decomposition graph
-            tokens_target = gtn.remove(
-                gtn.project_output(gtn.compose(target, lexicon)))
+            tokens_target = gtn.remove(gtn.project_output(gtn.compose(target, lexicon)))
             tokens_target.arc_sort()
 
             # Create alignment graph:
             alignments = gtn.project_input(
-                gtn.remove(gtn.compose(tokens, tokens_target)))
+                gtn.remove(gtn.compose(tokens, tokens_target))
+            )
             alignments.arc_sort()
 
             # Add transition scores:

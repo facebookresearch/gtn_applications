@@ -202,7 +202,7 @@ class TestTransducer(unittest.TestCase):
         ]
 
         tokens = list((t,) for t in range(N - 1))
-        graphemes_to_idx = {t : t for t in range(N - 1)}
+        graphemes_to_idx = {t: t for t in range(N - 1)}
         inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
 
         # With and without target length reduction:
@@ -212,7 +212,8 @@ class TestTransducer(unittest.TestCase):
                 graphemes_to_idx=graphemes_to_idx,
                 blank=True,
                 allow_repeats=False,
-                reduction=reduction)
+                reduction=reduction,
+            )
             ctc_inputs = torch.nn.functional.log_softmax(inputs, 2)
             ctc_result = CTCLoss(ctc_inputs, tgt, N - 1, reduction)
             ctc_result.backward()
@@ -225,10 +226,11 @@ class TestTransducer(unittest.TestCase):
             inputs.grad = None
 
             self.assertAlmostEqual(
-                ctc_result.item(), transducer_result.item(), places=4)
+                ctc_result.item(), transducer_result.item(), places=4
+            )
             self.assertTrue(
-                torch.allclose(ctc_grad, transducer_grad, rtol=1e-4, atol=1e-5))
-
+                torch.allclose(ctc_grad, transducer_grad, rtol=1e-4, atol=1e-5)
+            )
 
     def test_viterbi(self):
         T = 5
@@ -266,7 +268,6 @@ class TestTransducer(unittest.TestCase):
         emissions = torch.stack([emissions1, emissions2], dim=0)
         predictions = transducer.viterbi(emissions)
         self.assertEqual([p.tolist() for p in predictions], labels)
-
 
         # Test with blank without repeats:
         labels = [[1, 0], [2, 2]]

@@ -92,11 +92,11 @@ class TestCTCCriterion(unittest.TestCase):
         def fn_mean(input):
             return CTCLoss(input, tgt, N - 1, "mean")
 
-        inputs = torch.randn(B, T, N, dtype=torch.float, device = self.device, requires_grad=True)
-        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3,
-                                  atol=1e-2))
-        self.assertTrue(
-            gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
+        inputs = torch.randn(
+            B, T, N, dtype=torch.float, device=self.device, requires_grad=True
+        )
+        self.assertTrue(gradcheck(fn, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
+        self.assertTrue(gradcheck(fn_mean, (inputs), eps=1e-2, rtol=1e-3, atol=1e-2))
 
 
 if __name__ == "__main__":

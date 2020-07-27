@@ -4,8 +4,8 @@ from itertools import groupby
 import numpy as np
 import torch
 import utils
-
 import transducer
+
 
 class TDSBlock2d(torch.nn.Module):
     def __init__(self, in_channels, img_depth, kernel_size, dropout):
@@ -291,13 +291,16 @@ class ASG(torch.nn.Module):
         )
 
     def forward(self, inputs, targets):
-        targets = [t.tolist() for t in targets]
+        targets = [
+            utils.pack_replabels(t.tolist(), self.num_replabels) for t in targets
+        ]
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
-        assert C == self.num_classes + self.num_replabels, \
-            "Wrong number of classes in output."
+        assert (
+            C == self.num_classes + self.num_replabels
+        ), "Wrong number of classes in output."
 
         def process(b):
             prediction = []
@@ -312,17 +315,14 @@ class ASG(torch.nn.Module):
             )
             g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
             prediction = g_path.labels_to_list()
-            return utils.unpack_replabels(prediction, self.num_replabels)
+            collapsed_prediction = [p for p, _ in groupby(prediction)]
+            return utils.unpack_replabels(collapsed_prediction, self.num_replabels)
 
-        collapsed_predictions = []
         executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            prediction = torch.IntTensor(f.result())
-            collapsed_predictions.append(prediction)
+        predictions = [torch.IntTensor(f.result()) for f in futures]
         executor.shutdown()
-
-        return collapsed_predictions
+        return predictions
 
 
 def load_model(model_type, input_size, output_size, config):
@@ -351,7 +351,8 @@ def load_criterion(criterion_type, preprocessor, config):
             preprocessor.graphemes_to_index,
             blank=use_blank,
             allow_repeats=config.get("allow_repeats", True),
-            reduction="mean")
+            reduction="mean",
+        )
         return criterion, num_tokens + use_blank
     else:
         raise ValueError(f"Unknown model type {criterion_type}")
