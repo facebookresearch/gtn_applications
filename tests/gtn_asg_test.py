@@ -104,7 +104,7 @@ class TestASGCriterion(unittest.TestCase):
         N = 3
         input_list = [0, 0, 0, 7, 0, 5, 4, 3, 0, 5, 8, 5, 0, 5, 4, 3]
         trans_list = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 2, 0, 0]
-        expected_path = [2, 1, 1, 0]
+        expected_path = [2, 1, 0] # collapsed from [2, 1, 1, 0]
         rep = 1
         asg = ASG(N, rep)
         for param in asg.parameters():

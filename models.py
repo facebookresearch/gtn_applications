@@ -4,7 +4,6 @@ from itertools import groupby
 import numpy as np
 import torch
 import utils
-
 import transducer
 
 
@@ -292,7 +291,9 @@ class ASG(torch.nn.Module):
         )
 
     def forward(self, inputs, targets):
-        targets = [t.tolist() for t in targets]
+        targets = [
+            utils.pack_replabels(t.tolist(), self.num_replabels) for t in targets
+        ]
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
     def viterbi(self, outputs):
@@ -314,17 +315,14 @@ class ASG(torch.nn.Module):
             )
             g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
             prediction = g_path.labels_to_list()
-            return utils.unpack_replabels(prediction, self.num_replabels)
+            collapsed_prediction = [p for p, _ in groupby(prediction)]
+            return utils.unpack_replabels(collapsed_prediction, self.num_replabels)
 
-        collapsed_predictions = []
         executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            prediction = torch.IntTensor(f.result())
-            collapsed_predictions.append(prediction)
+        predictions = [torch.IntTensor(f.result()) for f in futures]
         executor.shutdown()
-
-        return collapsed_predictions
+        return predictions
 
 
 def load_model(model_type, input_size, output_size, config):

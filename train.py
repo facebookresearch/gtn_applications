@@ -170,7 +170,9 @@ def train(world_rank, args):
         "Training {} model with {:,} parameters.".format(config["model_type"], n_params)
     )
 
-    criterion_module = criterion  # `decode` cannot be called on DDP module
+    # Store base module, criterion for saving checkpoints
+    base_model = model
+    base_criterion = criterion  # `decode` cannot be called on DDP module
     if is_distributed_train:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[world_rank]
@@ -246,7 +248,7 @@ def train(world_rank, args):
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
             dist, toks = compute_edit_distance(
-                criterion_module.viterbi(outputs), targets, preprocessor
+                base_criterion.viterbi(outputs), targets, preprocessor
             )
             meters.edit_distance += dist
             meters.num_tokens += toks
@@ -264,11 +266,16 @@ def train(world_rank, args):
         logging.info("Evaluating validation set..")
         timers.start("test_total")
         val_loss, val_cer = test(
-            model, criterion_module, val_loader, preprocessor, device, args.world_size
+            model, base_criterion, val_loader, preprocessor, device, args.world_size
         )
         timers.stop("test_total")
         if world_rank == 0:
-            checkpoint(model, criterion, args.checkpoint_path, (val_cer < min_val_cer))
+            checkpoint(
+                base_model,
+                base_criterion,
+                args.checkpoint_path,
+                (val_cer < min_val_cer),
+            )
 
             min_val_loss = min(val_loss, min_val_loss)
             min_val_cer = min(val_cer, min_val_cer)
