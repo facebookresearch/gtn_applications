@@ -7,12 +7,18 @@ import math
 import torch
 import unittest
 
-from transducer import Transducer
+from transducer import Transducer, make_transitions_graph
 from utils import CTCLoss
 from torch.autograd import gradcheck
 
 
 class TestTransducer(unittest.TestCase):
+    def setUp(self):
+        self.device = torch.device("cpu")
+#        if torch.cuda.device_count() > 0:
+#            self.device = torch.device("cuda")
+
+
     def test_fwd_trivial(self):
         T = 3
         N = 2
@@ -273,6 +279,165 @@ class TestTransducer(unittest.TestCase):
         emissions = torch.stack([emissions1, emissions2], dim=0)
         predictions = transducer.viterbi(emissions)
         self.assertEqual([p.tolist() for p in predictions], labels)
+
+    def test_transitions(self):
+        num_tokens = 4
+
+        # unigram
+        transitions = make_transitions_graph(1, num_tokens)
+        expected = gtn.Graph()
+        expected.add_node(True, True)
+        for i in range(num_tokens):
+            expected.add_arc(0, 0, i)
+        self.assertTrue(gtn.isomorphic(transitions, expected))
+
+        # bigram
+        transitions = make_transitions_graph(2, num_tokens)
+        expected = gtn.Graph()
+        expected.add_node(True, True)
+        for i in range(num_tokens):
+            expected.add_node(False, True)
+            expected.add_arc(0, i+1, i)
+        for i in range(num_tokens):
+            for j in range(num_tokens):
+                expected.add_arc(i+1, j+1, j)
+        self.assertTrue(gtn.isomorphic(transitions, expected))
+
+        # trigram
+        transitions = make_transitions_graph(3, num_tokens)
+        expected = gtn.Graph()
+        expected.add_node(True, True)
+        for i in range(num_tokens):
+            expected.add_node(False, True)
+            expected.add_arc(0, i + 1, i)
+        for i in range(num_tokens):
+            for j in range(num_tokens):
+                expected.add_node(False, True)
+                expected.add_arc(
+                    i + 1,
+                    num_tokens * i + j + num_tokens + 1,
+                    j)
+        for i in range(num_tokens):
+            for j in range(num_tokens):
+                for k in range(num_tokens):
+                    expected.add_arc(
+                        num_tokens * i + j + num_tokens + 1,
+                        num_tokens * j + k + num_tokens + 1,
+                        k)
+        self.assertTrue(gtn.isomorphic(transitions, expected))
+
+    def test_asg(self):
+        T = 5
+        N = 6
+        B = 3
+        labels = [[2, 1, 5, 1, 3], [4, 3, 5], [3, 2, 2, 1]]
+        emissions = torch.tensor(
+            [
+                [
+                    [-0.4340, -0.0254, 0.3667, 0.4180, -0.3805, -0.1707],
+                    [0.1060, 0.3631, -0.1122, -0.3825, -0.0031, -0.3801],
+                    [0.0443, -0.3795, 0.3194, -0.3130, 0.0094, 0.1560],
+                    [0.1252, 0.2877, 0.1997, -0.4554, 0.2774, -0.2526],
+                    [-0.4001, -0.2402, 0.1295, 0.0172, 0.1805, -0.3299],
+                ],
+                [
+                    [0.3298, -0.2259, -0.0959, 0.4909, 0.2996, -0.2543],
+                    [-0.2863, 0.3239, -0.3988, 0.0732, -0.2107, -0.4739],
+                    [-0.0906, 0.0480, -0.1301, 0.3975, -0.3317, -0.1967],
+                    [0.4372, -0.2006, 0.0094, 0.3281, 0.1873, -0.2945],
+                    [0.2399, 0.0320, -0.3768, -0.2849, -0.2248, 0.3186],
+                ],
+                [
+                    [0.0225, -0.3867, -0.1929, -0.2904, -0.4958, -0.2533],
+                    [0.4001, -0.1517, -0.2799, -0.2915, 0.4198, 0.4506],
+                    [0.1446, -0.4753, -0.0711, 0.2876, -0.1851, -0.1066],
+                    [0.2081, -0.1190, -0.3902, -0.1668, 0.1911, -0.2848],
+                    [-0.3846, 0.1175, 0.1052, 0.2172, -0.0362, 0.3055],
+                ],
+            ],
+            requires_grad=True,
+        )
+
+        tokens = [(n,) for n in range(N)]
+        graphemes_to_idx = {n: n for n in range(N)}
+        transducer = Transducer(
+            tokens=tokens,
+            graphemes_to_idx=graphemes_to_idx,
+            n_gram=2)
+
+        loss = transducer(emissions, labels)
+        self.assertAlmostEqual(loss.item(), 7.47995, places=4)
+
+        loss.backward()
+        expected_grad = torch.tensor(
+            [
+                [
+                    [0.1060, 0.1595, -0.7639, 0.2485, 0.1118, 0.1380],
+                    [0.1915, -0.7524, 0.1539, 0.1175, 0.1717, 0.1178],
+                    [0.1738, 0.1137, 0.2288, 0.1216, 0.1678, -0.8057],
+                    [0.1766, -0.7923, 0.1902, 0.0988, 0.2056, 0.1210],
+                    [0.1212, 0.1422, 0.2059, -0.8160, 0.2166, 0.1300],
+                ],
+                [
+                    [0.2029, 0.1164, 0.1325, 0.2383, -0.8032, 0.1131],
+                    [0.1414, 0.2602, 0.1263, -0.3441, -0.3009, 0.1172],
+                    [0.1557, 0.1788, 0.1496, -0.5498, 0.0140, 0.0516],
+                    [0.2306, 0.1219, 0.1503, -0.4244, 0.1796, -0.2579],
+                    [0.2149, 0.1745, 0.1160, 0.1271, 0.1350, -0.7675],
+                ],
+                [
+                    [0.2195, 0.1458, 0.1770, -0.8395, 0.1307, 0.1666],
+                    [0.2148, 0.1237, -0.6613, -0.1223, 0.2191, 0.2259],
+                    [0.2002, 0.1077, -0.8386, 0.2310, 0.1440, 0.1557],
+                    [0.2197, -0.1466, -0.5742, 0.1510, 0.2160, 0.1342],
+                    [0.1050, -0.8265, 0.1714, 0.1917, 0.1488, 0.2094],
+                ],
+            ],
+            device=self.device,
+        )
+        expected_grad = expected_grad / B
+        self.assertTrue(emissions.grad.allclose(expected_grad, rtol=1e-03))
+        expected_trans_grad = (
+            torch.tensor(
+                [
+                    [0.3990, 0.3396, 0.3486, 0.3922, 0.3504, 0.3155],
+                    [0.3666, 0.0116, -1.6678, 0.3737, 0.3361, -0.7152],
+                    [0.3468, 0.3163, -1.1583, -0.6803, 0.3216, 0.2722],
+                    [0.3694, -0.6688, 0.3047, -0.8531, -0.6571, 0.2870],
+                    [0.3866, 0.3321, 0.3447, 0.3664, -0.2163, 0.3039],
+                    [0.3640, -0.6943, 0.2988, -0.6722, 0.3215, -0.1860],
+                ],
+                device=self.device,
+            ).view(N, N)
+            / B
+        )
+        trans_grad = transducer.transition_params.grad[N:].view(N, N).T
+        self.assertTrue(trans_grad.allclose(expected_trans_grad, rtol=1e-03))
+
+
+    def test_asg_viterbi(self):
+        T = 4
+        N = 4
+        inputs = torch.tensor(
+            [0, 0, 0, 7, 0, 5, 4, 3, 0, 5, 8, 5, 0, 5, 4, 3],
+            dtype=torch.float32,
+            device=self.device,
+        ).view(1, T, N)
+        transitions = torch.tensor(
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 2, 0],
+            dtype=torch.float32,
+            device=self.device,
+        ).view(N + 1, N)
+        expected_path = [3, 2, 1]
+        tokens = [(n,) for n in range(N)]
+        graphemes_to_idx = {n: n for n in range(N)}
+        transducer = Transducer(
+            tokens=tokens,
+            graphemes_to_idx=graphemes_to_idx,
+            n_gram=2)
+        transducer.transition_params.data = transitions
+        path = transducer.viterbi(inputs)[0].tolist()
+        self.assertTrue(path == expected_path)
 
 
 if __name__ == "__main__":

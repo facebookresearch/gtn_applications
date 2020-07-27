@@ -48,7 +48,6 @@ class TestASGCriterion(unittest.TestCase):
             device=self.device,
             requires_grad=True,
         )
-        emissions.retain_grad()
         transitions = torch.zeros((N + 1, N), device=self.device, requires_grad=True)
         fwd = ASGLoss(emissions, transitions, labels)
         self.assertAlmostEqual(fwd.item(), 7.47995, places=4)

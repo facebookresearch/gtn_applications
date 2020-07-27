@@ -1,10 +1,19 @@
 from concurrent.futures import ThreadPoolExecutor
 import gtn
 import torch
+import itertools
 
 
 def thread_init():
     torch.set_num_threads(1)
+
+
+def make_scalar_graph(weight):
+    scalar = gtn.Graph()
+    scalar.add_node(True)
+    scalar.add_node(False, True)
+    scalar.add_arc(0, 1, 0, 0, weight)
+    return scalar
 
 
 def make_chain_graph(sequence):
@@ -14,6 +23,25 @@ def make_chain_graph(sequence):
         graph.add_node(False, i == (len(sequence) - 1))
         graph.add_arc(i, i + 1, s)
     return graph
+
+
+def make_transitions_graph(ngram, num_tokens, calc_grad=False):
+    transitions = gtn.Graph(calc_grad)
+    transitions.add_node(True, True)
+
+    # first build transitions which include <s>:
+    for n in range(1, ngram):
+        for state in itertools.product(range(num_tokens), repeat=n):
+            in_idx = sum((s + 1) * (num_tokens**e) for e, s in enumerate(state[:-1]))
+            out_idx = transitions.add_node(False, True)
+            transitions.add_arc(in_idx, out_idx, state[-1])
+
+    for state in itertools.product(range(num_tokens), repeat=ngram):
+        state_idx = sum((s + 1) * (num_tokens**e) for e, s in enumerate(state[:-1]))
+        new_state_idx = sum((s + 1) * (num_tokens**e) for e, s in enumerate(state[1:]))
+        # p(state[-1] | state[:-1])
+        transitions.add_arc(state_idx, new_state_idx, state[-1])
+    return transitions
 
 
 def make_lexicon_graph(word_pieces, graphemes_to_idx):
@@ -101,9 +129,14 @@ class Transducer(torch.nn.Module):
         self.tokens = make_token_graph(
             tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
+        self.n_gram = n_gram
         if n_gram > 0:
-            raise NotImplementedError("Transition graphs not yet implemented.")
-        self.transitions = None
+            self.transitions = make_transitions_graph(n_gram, len(tokens) + blank, True)
+            self.transitions.arc_sort()
+            self.transition_params = torch.nn.Parameter(
+                torch.zeros(self.transitions.num_arcs()))
+        else:
+            self.transitions = None
         self.reduction = reduction
 
     def forward(self, inputs, targets):
@@ -115,18 +148,24 @@ class Transducer(torch.nn.Module):
             targets,
             self.tokens,
             self.lexicon,
+            self.transition_params,
             self.transitions,
             self.reduction)
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
+
+        if self.transitions is not None:
+            cpu_data = self.transition_params.cpu().contiguous()
+            self.transitions.set_weights(cpu_data.data_ptr())
+
         self.tokens.arc_sort()
         def process(b):
             emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
             emissions.set_weights(cpu_data.data_ptr())
             if self.transitions is not None:
-                full_graph = gtn.intersect(emissions, transitions)
+                full_graph = gtn.intersect(emissions, self.transitions)
             else:
                 full_graph = emissions
             # Left compose the viterbi path with the "alignment to token"
@@ -149,11 +188,19 @@ class Transducer(torch.nn.Module):
 class TransducerLossFunction(torch.autograd.Function):
 
     @staticmethod
-    def forward(ctx, inputs, targets, tokens, lexicon, transitions=None, reduction="none"):
+    def forward(
+            ctx, inputs, targets, tokens, lexicon,
+            transition_params=None, transitions=None, reduction="none"):
         B, T, C = inputs.shape
         losses = [None] * B
         emissions_graphs = [None] * B
-        transitions_graphs = [None] * B
+        if transitions is not None:
+            if transition_params is None:
+                raise ValueError(
+                    "Specified transitions, but not transition params.")
+            cpu_data = transition_params.cpu().contiguous()
+            transitions.set_weights(cpu_data.data_ptr())
+
         def process(b):
             # Create emissions graph:
             emissions = gtn.linear_graph(T, C, inputs.requires_grad)
@@ -172,80 +219,78 @@ class TransducerLossFunction(torch.autograd.Function):
                 gtn.remove(gtn.compose(tokens, tokens_target)))
             alignments.arc_sort()
 
-            num = gtn.forward_score(gtn.intersect(emissions, alignments))
+            # Add transition scores:
             if transitions is not None:
-                denom = gtn.forward_score(gtn.intersect(emissions, transitions))
-                losses[b] = gtn.subtract(denom, num)
-            else:
-                losses[b] = gtn.negate(num)
+                alignments = gtn.intersect(transitions, alignments)
+                alignments.arc_sort()
+
+            loss = gtn.forward_score(gtn.intersect(emissions, alignments))
+
+            # Normalize if needed:
+            if transitions is not None:
+                norm = gtn.forward_score(gtn.intersect(emissions, transitions))
+                loss = gtn.subtract(loss, norm)
+
+            losses[b] = gtn.negate(loss)
 
             # Save for backward:
             emissions_graphs[b] = emissions
-            transitions_graphs[b] = transitions
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
             f.result()
-        ctx.graphs = (losses, emissions_graphs, transitions_graphs)
+        ctx.graphs = (losses, emissions_graphs, transitions)
         ctx.input_shape = inputs.shape
 
         # Optionally reduce by target length:
         if reduction == "mean":
-            scales = [(1 / len(t) if len(t) > 0 else 1.0) for t in targets]
+            scales = [(1 / (B * len(t)) if len(t) > 0 else 1.0) for t in targets]
         else:
-            scales = [1.0] * B
+            scales = [1 / B] * B
         ctx.scales = scales
 
         loss = torch.tensor([l.item() * s for l, s in zip(losses, scales)])
-        return torch.mean(loss.cuda() if inputs.is_cuda else loss)
+        return torch.sum(loss.to(inputs.device))
 
     @staticmethod
     def backward(ctx, grad_output):
-        losses, emissions_graphs, transitions_graphs = ctx.graphs
+        losses, emissions_graphs, transitions = ctx.graphs
         scales = ctx.scales
         B, T, C = ctx.input_shape
-        calc_emissions = emissions_graphs[0].calc_grad()
-        calc_transitions = transitions_graphs[0] is not None \
-                and transitions_graphs[0].calc_grad()
-        input_grad = transitions_grad = None
-        if calc_emissions:
-            input_grad = torch.empty((B, T, C))
-        if calc_transitions:
-            transitions_grad = torch.empty(transtions_graphs[0].num_arcs())
+        calc_emissions = ctx.needs_input_grad[0]
+        input_grad = torch.empty((B, T, C)) if calc_emissions else None
+
         def process(b):
-            gtn.backward(losses[b], False)
+            scale = make_scalar_graph(scales[b])
+            gtn.backward(losses[b], scale)
             emissions = emissions_graphs[b]
-            transitions = transitions_graphs[b]
             if calc_emissions:
                 grad = emissions.grad().weights_to_numpy()
-                input_grad[b] = torch.tensor(grad).view(1, T, C) * scales[b]
-                # TODO don't save emissions graph in forward if calc_emissions is False
-            if calc_transitions:
-                raise NotImplementedError("Transitions not implemented yet.")
-            # TODO, clean-up emissions and transitions graphs?
-
+                input_grad[b] = torch.tensor(grad).view(1, T, C)
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
             f.result()
 
-        if input_grad is not None:
-            if grad_output.is_cuda:
-                input_grad = input_grad.cuda()
-            input_grad *= (grad_output / B)
-        if transitions_grad is not None:
-            if grad_output.is_cuda:
-                transitions_grad = transitions_grad.cuda()
-            transitions_grad *= (grad_output / B)
+        if calc_emissions:
+            input_grad = input_grad.to(grad_output.device)
+
+        if ctx.needs_input_grad[4]:
+            grad = transitions.grad().weights_to_numpy()
+            transition_grad = torch.tensor(grad).to(grad_output.device)
+            transitions.zero_grad()
+        else:
+            transitions_grad = None
 
         return (
             input_grad,
             None, # target
             None, # tokens
             None, # lex
-            transitions_grad,
+            transition_grad, # transition params
+            None, # transitions graph
             None,
         )
 
