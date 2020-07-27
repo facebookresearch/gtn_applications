@@ -114,9 +114,6 @@ class TestASGCriterion(unittest.TestCase):
             1, T, N + rep
         )
         path = asg.viterbi(inputs)[0].tolist()
-        self.assertEqual(len(expected_path), len(path))
-        for i in range(0, len(path)):
-            self.assertEqual(expected_path[i], path[i])
         self.assertTrue(path == expected_path)
 
     @unittest.skip("Enable when gtn supports retain grad graph.")
