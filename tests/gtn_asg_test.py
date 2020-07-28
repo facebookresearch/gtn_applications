@@ -48,7 +48,6 @@ class TestASGCriterion(unittest.TestCase):
             device=self.device,
             requires_grad=True,
         )
-        emissions.retain_grad()
         transitions = torch.zeros((N + 1, N), device=self.device, requires_grad=True)
         fwd = ASGLoss(emissions, transitions, labels)
         self.assertAlmostEqual(fwd.item(), 7.47995, places=4)
@@ -115,9 +114,6 @@ class TestASGCriterion(unittest.TestCase):
             1, T, N + rep
         )
         path = asg.viterbi(inputs)[0].tolist()
-        self.assertEqual(len(expected_path), len(path))
-        for i in range(0, len(path)):
-            self.assertEqual(expected_path[i], path[i])
         self.assertTrue(path == expected_path)
 
     @unittest.skip("Enable when gtn supports retain grad graph.")
