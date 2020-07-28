@@ -359,7 +359,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=tokens,
             graphemes_to_idx=graphemes_to_idx,
-            n_gram=2)
+            ngram=2)
 
         loss = transducer(emissions, labels)
         self.assertAlmostEqual(loss.item(), 7.47995, places=4)
@@ -426,7 +426,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=tokens,
             graphemes_to_idx=graphemes_to_idx,
-            n_gram=2)
+            ngram=2)
         transducer.transition_params.data = transitions
         path = transducer.viterbi(inputs)[0].tolist()
         self.assertTrue(path == expected_path)

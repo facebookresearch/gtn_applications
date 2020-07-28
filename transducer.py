@@ -160,6 +160,7 @@ class Transducer(torch.nn.Module):
         if self.transitions is not None:
             cpu_data = self.transition_params.cpu().contiguous()
             self.transitions.set_weights(cpu_data.data_ptr())
+            self.transitions.calc_grad = False
 
         self.tokens.arc_sort()
 
@@ -202,6 +203,8 @@ class TransducerLossFunction(torch.autograd.Function):
                     "Specified transitions, but not transition params.")
             cpu_data = transition_params.cpu().contiguous()
             transitions.set_weights(cpu_data.data_ptr())
+            transitions.calc_grad = transition_params.requires_grad
+            transitions.zero_grad()
 
         def process(b):
             # Create emissions graph:
@@ -247,13 +250,13 @@ class TransducerLossFunction(torch.autograd.Function):
 
         # Optionally reduce by target length:
         if reduction == "mean":
-            scales = [(1 / (B * len(t)) if len(t) > 0 else 1.0) for t in targets]
+            scales = [(1 / len(t) if len(t) > 0 else 1.0) for t in targets]
         else:
-            scales = [1 / B] * B
+            scales = [1.0] * B
         ctx.scales = scales
 
         loss = torch.tensor([l.item() * s for l, s in zip(losses, scales)])
-        return torch.sum(loss.to(inputs.device))
+        return torch.mean(loss.to(inputs.device))
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -278,11 +281,12 @@ class TransducerLossFunction(torch.autograd.Function):
 
         if calc_emissions:
             input_grad = input_grad.to(grad_output.device)
+            input_grad *= (grad_output / B)
 
         if ctx.needs_input_grad[4]:
             grad = transitions.grad().weights_to_numpy()
             transition_grad = torch.tensor(grad).to(grad_output.device)
-            transitions.zero_grad()
+            transition_grad *= (grad_output / B)
         else:
             transition_grad = None
 
