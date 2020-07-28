@@ -252,7 +252,6 @@ class CTCLossFunction(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, log_probs, targets, blank_idx=0, reduction="none"):
-        grad_enabled = log_probs.requires_grad
         B, T, C = log_probs.shape
         losses = [None] * B
         scales = [None] * B
