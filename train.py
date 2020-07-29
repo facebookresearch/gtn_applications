@@ -1,5 +1,6 @@
 import argparse
 import editdistance
+import itertools
 import json
 import logging
 import os
@@ -95,6 +96,8 @@ def test(model, criterion, data_loader, preprocessor, device, world_size):
 
 
 def checkpoint(model, criterion, checkpoint_path, save_best=False):
+    if not os.path.exists(checkpoint_path):
+        os.mkdir(checkpoint_path)
     model_checkpoint = os.path.join(checkpoint_path, "model.checkpoint")
     criterion_checkpoint = os.path.join(checkpoint_path, "criterion.checkpoint")
     torch.save(model.state_dict(), model_checkpoint)
@@ -239,7 +242,10 @@ def train(world_rank, args):
             loss.backward()
             timers.stop("bwd").start("optim")
             if max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    itertools.chain(model.parameters(), criterion.parameters()),
+                    max_grad_norm,
+                )
             optimizer.step()
             if crit_optimizer:
                 crit_optimizer.step()
