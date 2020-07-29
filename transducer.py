@@ -46,7 +46,7 @@ def make_transitions_graph(ngram, num_tokens, calc_grad=False):
 
 def make_lexicon_graph(word_pieces, graphemes_to_idx):
     """
-    Constructs a graph which transudces letters to word pieces.
+    Constructs a graph which transduces letters to word pieces.
     """
     graph = gtn.Graph(False)
     graph.add_node(True, True)
@@ -239,12 +239,15 @@ class TransducerLossFunction(torch.autograd.Function):
             losses[b] = gtn.negate(loss)
 
             # Save for backward:
-            emissions_graphs[b] = emissions
+            if emissions.calc_grad:
+                emissions_graphs[b] = emissions
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
             f.result()
+        executor.shutdown()
+
         ctx.graphs = (losses, emissions_graphs, transitions)
         ctx.input_shape = inputs.shape
 
@@ -278,6 +281,7 @@ class TransducerLossFunction(torch.autograd.Function):
         futures = [executor.submit(process, b) for b in range(B)]
         for f in futures:
             f.result()
+        executor.shutdown()
 
         if calc_emissions:
             input_grad = input_grad.to(grad_output.device)

@@ -349,6 +349,7 @@ def load_criterion(criterion_type, preprocessor, config):
         criterion = transducer.Transducer(
             preprocessor.tokens,
             preprocessor.graphemes_to_index,
+            ngram=config.get("ngram", 0),
             blank=use_blank,
             allow_repeats=config.get("allow_repeats", True),
             reduction="mean",
