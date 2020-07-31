@@ -104,14 +104,15 @@ class TestASGCriterion(unittest.TestCase):
         input_list = [0, 0, 0, 7, 0, 5, 4, 3, 0, 5, 8, 5, 0, 5, 4, 3]
         trans_list = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 2, 0, 0]
         expected_path = [2, 1, 0] # collapsed from [2, 1, 1, 0]
-        rep = 1
-        asg = ASG(N, rep)
+        num_replabels = 1
+        use_garbage = False
+        asg = ASG(N, num_replabels, use_garbage)
         for param in asg.parameters():
             param.data = torch.tensor(
                 trans_list, device=self.device, dtype=torch.float32
-            ).view(N + rep + 1, N + rep)
+            ).view(N + num_replabels + 1, N + num_replabels)
         inputs = torch.tensor(input_list, device=self.device, dtype=torch.float32).view(
-            1, T, N + rep
+            1, T, N + num_replabels
         )
         path = asg.viterbi(inputs)[0].tolist()
         self.assertTrue(path == expected_path)

@@ -279,28 +279,30 @@ class CTC(torch.nn.Module):
 
 
 class ASG(torch.nn.Module):
-    def __init__(self, num_classes, num_replabels=1):
+    def __init__(self, num_classes, num_replabels=1, use_garbage=True):
         super(ASG, self).__init__()
         self.num_classes = num_classes
         self.num_replabels = num_replabels
         assert self.num_replabels > 0
-        self.transitions = torch.nn.Parameter(
-            torch.zeros(
-                self.num_classes + num_replabels + 1, self.num_classes + num_replabels
-            )
-        )
+        self.garbage_idx = (num_classes + num_replabels) if use_garbage else None
+        self.N = num_classes + num_replabels + int(use_garbage)
+        self.transitions = torch.nn.Parameter(torch.zeros(self.N + 1, self.N))
 
     def forward(self, inputs, targets):
         targets = [
             utils.pack_replabels(t.tolist(), self.num_replabels) for t in targets
         ]
+        if self.garbage_idx is not None:
+            # add a garbage token between each target label
+            for idx in range(len(targets)):
+                prev_tgt = targets[idx]
+                targets[idx] = [self.garbage_idx] * (len(prev_tgt) * 2 + 1)
+                targets[idx][1::2] = prev_tgt
         return utils.ASGLoss(inputs, self.transitions, targets, "mean")
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
-        assert (
-            C == self.num_classes + self.num_replabels
-        ), "Wrong number of classes in output."
+        assert C == self.N, "Wrong number of classes in output."
 
         def process(b):
             prediction = []
@@ -315,7 +317,13 @@ class ASG(torch.nn.Module):
             )
             g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
             prediction = g_path.labels_to_list()
+
             collapsed_prediction = [p for p, _ in groupby(prediction)]
+            if self.garbage_idx is not None:
+                # remove garbage tokens
+                collapsed_prediction = [
+                    p for p in collapsed_prediction if p != self.garbage_idx
+                ]
             return utils.unpack_replabels(collapsed_prediction, self.num_replabels)
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
@@ -340,7 +348,11 @@ def load_criterion(criterion_type, preprocessor, config):
     num_tokens = preprocessor.num_tokens
     if criterion_type == "asg":
         num_replabels = config.get("num_replabels", 0)
-        return ASG(num_tokens, num_replabels), num_tokens + num_replabels
+        use_garbage = config.get("use_garbage", True)
+        return (
+            ASG(num_tokens, num_replabels, use_garbage),
+            num_tokens + num_replabels + int(use_garbage),
+        )
     elif criterion_type == "ctc":
         use_pt = config.get("use_pt", True)
         return CTC(num_tokens, use_pt), num_tokens + 1  # account for blank
