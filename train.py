@@ -63,6 +63,9 @@ def parse_args():
     else:
         logging.info("Running with GIL")
 
+    torch.multiprocessing.set_start_method("spawn", force=True)
+    logging.info("Set start method of multiprocessing to spawn")
+    
     return args
 
 
