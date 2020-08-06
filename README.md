@@ -10,7 +10,7 @@ A library for handwriting recognition with GTNs.
 
 3. `conda install -c nogil pytorch torchvision`
 
-4. `pip install -e requirements.txt`
+4. `pip install -r requirements.txt`
 
 ## Training
 
@@ -22,7 +22,7 @@ First download the dataset:
 ./datasets/download_iamdb.sh <path_to_data>
 ```
 
-Then update the configuration JSON `configs/iamdb_tds2d.json` to point to the
+Then update the configuration JSON `configs/iamdb/tds2d.json` to point to the
 data path used above:
 ```
   "data" : {
@@ -34,12 +34,12 @@ data path used above:
 
 Single GPU training can be run with:
 ```
-python train.py --config configs/iamdb_tds2d.json
+python train.py --config configs/iamdb/tds2d.json
 ```
 
 To run distributed training with multiple GPUs:
 ```
-python train.py --config configs/iamdb_tds2d.json --world_size <NUM_GPUS>
+python train.py --config configs/iamdb/tds2d.json --world_size <NUM_GPUS>
 ```
 
 Set the environment variable `PYTHONGIL=0` when using criterion implemented using GTNs. This gives better performance for multithreading. 
