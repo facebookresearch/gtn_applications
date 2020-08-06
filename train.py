@@ -65,7 +65,6 @@ def parse_args():
 
     torch.multiprocessing.set_start_method("spawn", force=True)
     logging.info("Set start method of multiprocessing to spawn")
-    
     return args
 
 
@@ -196,17 +195,18 @@ def train(world_rank, args):
 
     # run training:
     logging.info("Starting training ...")
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    params = [{ "params" : model.parameters()}]
+    if len(list(criterion.parameters())) > 0:
+        crit_params = { "params" : criterion.parameters()}
+        crit_lr = config["optim"].get("crit_learning_rate", None)
+        if crit_lr is not None:
+            crit_params['lr'] = crit_lr
+        params.append(crit_params)
+
+    optimizer = torch.optim.SGD(params, lr=lr)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, step_size=step_size, gamma=0.5
     )
-    crit_optimizer = crit_scheduler = None
-    if len(list(criterion.parameters())) > 0:
-        crit_lr = config["optim"]["crit_learning_rate"]
-        crit_optimizer = torch.optim.SGD(criterion.parameters(), lr=crit_lr)
-        crit_scheduler = torch.optim.lr_scheduler.StepLR(
-            crit_optimizer, step_size=step_size, gamma=0.5
-        )
 
     min_val_loss = float("inf")
     min_val_cer = float("inf")
@@ -236,8 +236,6 @@ def train(world_rank, args):
         for inputs, targets in train_loader:
             timers.stop("ds_fetch").start("model_fwd")
             optimizer.zero_grad()
-            if crit_optimizer:
-                crit_optimizer.zero_grad()
             outputs = model(inputs.to(device))
             timers.stop("model_fwd").start("crit_fwd")
             loss = criterion(outputs, targets)
@@ -250,8 +248,6 @@ def train(world_rank, args):
                     max_grad_norm,
                 )
             optimizer.step()
-            if crit_optimizer:
-                crit_optimizer.step()
             num_updates += 1
             timers.stop("optim").start("metrics")
             meters.loss += loss.item() * len(targets)
@@ -304,8 +300,6 @@ def train(world_rank, args):
             )
         )
         scheduler.step()
-        if crit_scheduler:
-            crit_scheduler.step()
         start_time = time.time()
 
     if is_distributed_train:
