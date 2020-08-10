@@ -195,6 +195,7 @@ class Preprocessor:
         # ignore preceding and trailling spaces
         return "".join(indices).strip(WORDSEP)
 
+
 def load_metadata(data_path):
     forms = collections.defaultdict(list)
     with open(os.path.join(data_path, "lines.txt"), 'r') as fid:
@@ -219,11 +220,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Compute data stats.')
     parser.add_argument('--data_path', type=str,
         help='Path to dataset.')
+    parser.add_argument('--save_text', type=str,
+        help="Path to save parsed train text.", default=None)
+    parser.add_argument('--save_tokens', type=str,
+        help="Path to save tokens.", default=None)
     args = parser.parse_args()
 
     preprocessor = Preprocessor(args.data_path, 64)
     trainset = Dataset(
         args.data_path, preprocessor, split="train", augment=False)
+    if args.save_text is not None:
+        with open(args.save_text, 'w') as fid:
+            fid.write("\n".join(t for _, t in trainset.dataset))
+    if args.save_tokens is not None:
+        with open(args.save_tokens, 'w') as fid:
+            fid.write("\n".join(preprocessor.tokens))
     valset = Dataset(args.data_path, preprocessor, split="validation")
     testset = Dataset(args.data_path, preprocessor, split="test")
 

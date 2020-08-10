@@ -358,10 +358,14 @@ def load_criterion(criterion_type, preprocessor, config):
         return CTC(num_tokens, use_pt), num_tokens + 1  # account for blank
     elif criterion_type == "transducer":
         use_blank = config.get("blank", False)
+        transitions = config.get("transitions", None)
+        if transitions is not None:
+            transitions = gtn.load(transitions)
         criterion = transducer.Transducer(
             preprocessor.tokens,
             preprocessor.graphemes_to_index,
             ngram=config.get("ngram", 0),
+            transitions=transitions,
             blank=use_blank,
             allow_repeats=config.get("allow_repeats", True),
             reduction="mean",

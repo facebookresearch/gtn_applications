@@ -123,6 +123,7 @@ class Transducer(torch.nn.Module):
         tokens,
         graphemes_to_idx,
         ngram=0,
+        transitions=None,
         blank=False,
         allow_repeats=True,
         reduction="none",
@@ -131,8 +132,13 @@ class Transducer(torch.nn.Module):
         self.tokens = make_token_graph(tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         self.ngram = ngram
+        if ngram > 0 and transitions is not None:
+            raise ValueError("Only one of ngram and transitions may be specified")
         if ngram > 0:
-            self.transitions = make_transitions_graph(ngram, len(tokens) + blank, True)
+            transitions = make_transitions_graph(ngram, len(tokens) + blank, True)
+
+        if transitions is not None:
+            self.transitions = transitions
             self.transitions.arc_sort()
             self.transition_params = torch.nn.Parameter(
                 torch.zeros(self.transitions.num_arcs()))
@@ -172,9 +178,12 @@ class Transducer(torch.nn.Module):
                 full_graph = gtn.intersect(emissions, self.transitions)
             else:
                 full_graph = emissions
+
+            # Find the best path and remove back-off arcs:
+            path = gtn.remove(gtn.viterbi_path(full_graph))
             # Left compose the viterbi path with the "alignment to token"
             # transducer to get the outputs:
-            path = gtn.compose(gtn.viterbi_path(full_graph), self.tokens)
+            path = gtn.compose(path, self.tokens)
 
             # When there are ambiguous paths (allow_repeats is true), we take
             # the shortest:
