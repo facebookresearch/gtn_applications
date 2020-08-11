@@ -224,6 +224,8 @@ if __name__ == "__main__":
         help="Path to save parsed train text.", default=None)
     parser.add_argument('--save_tokens', type=str,
         help="Path to save tokens.", default=None)
+    parser.add_argument('--compute_stats', action="store_true",
+        help="Compute training data statistics.", default=False)
     args = parser.parse_args()
 
     preprocessor = Preprocessor(args.data_path, 64)
@@ -237,6 +239,10 @@ if __name__ == "__main__":
             fid.write("\n".join(preprocessor.tokens))
     valset = Dataset(args.data_path, preprocessor, split="validation")
     testset = Dataset(args.data_path, preprocessor, split="test")
+
+    if not args.compute_stats:
+        import sys
+        sys.exit(0)
 
     # Compute mean and var stats:
     images = torch.cat([trainset[i][0] for i in range(len(trainset))], dim=2)

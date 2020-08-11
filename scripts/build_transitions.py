@@ -3,6 +3,7 @@ import collections
 import gtn
 
 START_IDX = -1
+WORDSEP = "▁"
 
 
 def build_graph(ngrams):
@@ -41,14 +42,20 @@ def build_graph(ngrams):
     return graph
 
 
-def count_ngrams(lines, ngram, tokens_to_idx):
+def count_ngrams(lines, ngram, tokens_to_idx, blank=False):
     counts = [collections.Counter() for _ in range(ngram)]
     for line in lines:
         # prepend implicit start token
-        line = [START_IDX] * (ngram - 1) + [tokens_to_idx[t] for t in line]
-        for e in range(ngram - 1, len(line)):
+        token_line = [START_IDX] * (ngram - 1)
+        if blank:
+            token_line.append(len(tokens_to_idx))
+        for t in line:
+            token_line.append(tokens_to_idx[t])
+            if blank:
+                token_line.append(len(tokens_to_idx))
+        for e in range(ngram - 1, len(token_line)):
             for n, counter in enumerate(counts):
-                counter[tuple(line[e - n:e + 1])] += 1
+                counter[tuple(token_line[e - n:e + 1])] += 1
     return counts
 
 
@@ -61,6 +68,14 @@ def prune_ngrams(ngrams, prune):
     return pruned_ngrams
 
 
+def parse_lines(lines, lexicon):
+    with open(lexicon, 'r') as fid:
+        lex = (l.strip().split() for l in fid)
+        lex = {l[0] : l[1:] for l in lex}
+    return [[t for w in l.split(WORDSEP) for t in lex[w]]
+        for l in lines]
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Compute data stats.")
@@ -68,6 +83,8 @@ if __name__ == "__main__":
         help="Path to dataset.")
     parser.add_argument("--tokens", type=str,
         help="Path to token list (in order used with training).")
+    parser.add_argument("--lexicon", type=str,
+        help="Path to lexicon.", default=None)
     parser.add_argument("--prune", metavar='N', type=int, nargs='+',
         help="Threshold values to prune unigrams, bigrams, etc.")
     parser.add_argument("--blank", default=False, action="store_true",
@@ -87,11 +104,13 @@ if __name__ == "__main__":
         lines = [l.strip() for l in fid]
     with open(args.tokens, 'r') as fid:
         tokens = [l.strip() for l in fid]
+    if args.lexicon is not None:
+        lines = parse_lines(lines, args.lexicon)
     tokens_to_idx = {t: e for e, t in enumerate(tokens)}
 
     ngram = len(args.prune)
     print("Counting data...")
-    ngrams = count_ngrams(lines, ngram, tokens_to_idx)
+    ngrams = count_ngrams(lines, ngram, tokens_to_idx, args.blank)
 
     pruned_ngrams = prune_ngrams(ngrams, args.prune)
     for n in range(ngram):
@@ -99,10 +118,11 @@ if __name__ == "__main__":
 
     print("Building graph from pruned ngrams...")
     graph = build_graph(pruned_ngrams)
-    print("Graph has {} arcs and {} nodes".format(
+    print("Graph has {} arcs and {} nodes.".format(
         graph.num_arcs(), graph.num_nodes()))
 
     if args.save_path is not None:
+        print(f"Saving graph to {args.save_path}")
         with open(args.save_path, 'w') as fid:
             graph_str = graph.__repr__().strip()
             fid.write(graph_str)
