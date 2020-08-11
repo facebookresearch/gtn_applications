@@ -62,7 +62,6 @@ def parse_args():
         logging.info("Running without GIL")
     else:
         logging.info("Running with GIL")
-
     return args
 
 
@@ -153,6 +152,7 @@ def train(world_rank, args):
         img_height=input_size,
         tokens_path=config["data"].get("tokens", None),
         lexicon_path=config["data"].get("lexicon", None),
+        use_words=config["data"].get("use_words", False),
     )
     trainset = dataset.Dataset(data_path, preprocessor, split="train", augment=True)
     valset = dataset.Dataset(data_path, preprocessor, split="validation")

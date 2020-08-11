@@ -19,7 +19,7 @@ WORDSEP = "▁"
 class Dataset(torch.utils.data.Dataset):
 
     def __init__(self, data_path, preprocessor, split, augment=False):
-        forms = load_metadata(data_path)
+        forms = load_metadata(data_path, use_words=preprocessor.use_words)
 
         # Get split keys:
         splits = SPLITS.get(split, None)
@@ -52,13 +52,13 @@ class Dataset(torch.utils.data.Dataset):
         # Load each image:
         images = []
         text = []
-        for key, lines in forms.items():
-            for line in lines:
-                if line["key"] not in split_keys:
+        for key, examples in forms.items():
+            for example in examples:
+                if example["key"] not in split_keys:
                     continue
                 img_file = os.path.join(data_path, f"{key}.png")
-                images.append((img_file, line["box"], preprocessor.img_height))
-                text.append(line["text"])
+                images.append((img_file, example["box"], preprocessor.img_height))
+                text.append(example["text"])
         with mp.Pool(processes=16) as pool:
             images = pool.map(load_image, images)
         self.dataset = list(zip(images, text))
@@ -138,8 +138,10 @@ class Preprocessor:
             data_path,
             img_height,
             tokens_path=None,
-            lexicon_path=None):
-        forms = load_metadata(data_path)
+            lexicon_path=None,
+            use_words=False):
+        forms = load_metadata(data_path, use_words=use_words)
+        self._use_words = use_words
 
         # Load the set of graphemes:
         graphemes = set()
@@ -174,12 +176,17 @@ class Preprocessor:
     def num_tokens(self):
         return len(self.tokens)
 
+    @property
+    def use_words(self):
+        return self._use_words
+
     def to_index(self, line):
         tok_to_idx = self.graphemes_to_index
         if self.lexicon is not None:
-            line = [t for w in line.split(WORDSEP) for t in self.lexicon[w]]
+            if len(line) > 0:
+                line = [t for w in line.split(WORDSEP) for t in self.lexicon[w]]
             tok_to_idx = self.tokens_to_index
-        return torch.tensor([tok_to_idx[t] for t in line])
+        return torch.LongTensor([tok_to_idx[t] for t in line])
 
     def to_text(self, indices):
         # Roughly the inverse of `to_index`
@@ -196,20 +203,27 @@ class Preprocessor:
         return "".join(indices).strip(WORDSEP)
 
 
-def load_metadata(data_path):
+def load_metadata(data_path, use_words=False):
     forms = collections.defaultdict(list)
-    with open(os.path.join(data_path, "lines.txt"), 'r') as fid:
+    filename = "words.txt" if use_words else "lines.txt"
+    with open(os.path.join(data_path, filename), 'r') as fid:
         lines = (l.strip().split() for l in fid if l[0] != "#")
         for line in lines:
+            # skip word segmentation errors
+            if use_words and line[1] == "err":
+                continue
             text = " ".join(line[8:])
             # remove garbage tokens:
             text = text.replace("#", "")
             # swap word sep from | to WORDSEP
             text = re.sub(r"\|+|\s", WORDSEP, text).strip(WORDSEP)
-            form_key = "-".join(line[0].split("-")[:-1])
+            form_key = "-".join(line[0].split("-")[:2])
+            line_key = "-".join(line[0].split("-")[:3])
+            box_idx = 4 - use_words
+            box = tuple(int(val) for val in line[box_idx:box_idx + 4])
             forms[form_key].append({
-                "key" : line[0],
-                "box" : tuple(int(val) for val in line[4:8]),
+                "key" : line_key,
+                "box" : box,
                 "text" : text,
             })
     return forms
@@ -220,6 +234,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Compute data stats.')
     parser.add_argument('--data_path', type=str,
         help='Path to dataset.')
+    parser.add_argument('--use_words', default=False, action="store_true",
+        help='Load word segmented dataset instead of lines.')
     parser.add_argument('--save_text', type=str,
         help="Path to save parsed train text.", default=None)
     parser.add_argument('--save_tokens', type=str,
@@ -228,7 +244,7 @@ if __name__ == "__main__":
         help="Compute training data statistics.", default=False)
     args = parser.parse_args()
 
-    preprocessor = Preprocessor(args.data_path, 64)
+    preprocessor = Preprocessor(args.data_path, 64, use_words=args.use_words)
     trainset = Dataset(
         args.data_path, preprocessor, split="train", augment=False)
     if args.save_text is not None:
@@ -239,6 +255,10 @@ if __name__ == "__main__":
             fid.write("\n".join(preprocessor.tokens))
     valset = Dataset(args.data_path, preprocessor, split="validation")
     testset = Dataset(args.data_path, preprocessor, split="test")
+    print("Number of examples per dataset:")
+    print(f"Training: {len(trainset)}")
+    print(f"Validation: {len(valset)}")
+    print(f"Test: {len(testset)}")
 
     if not args.compute_stats:
         import sys

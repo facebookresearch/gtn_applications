@@ -260,7 +260,8 @@ class CTC(torch.nn.Module):
             target_lengths = [t.numel() for t in targets]
             targets = torch.cat(targets)
             return torch.nn.functional.ctc_loss(
-                log_probs, targets, input_lengths, target_lengths, blank=self.blank
+                log_probs, targets, input_lengths, target_lengths,
+                blank=self.blank, zero_infinity=True,
             )
         else:
             targets = [t.tolist() for t in targets]
@@ -270,7 +271,7 @@ class CTC(torch.nn.Module):
         predictions = torch.argmax(outputs, dim=2).to("cpu")
         collapsed_predictions = []
         for pred in predictions.split(1):
-            pred = pred.squeeze()
+            pred = pred.squeeze(1)
             mask = pred[1:] != pred[:-1]
             pred = torch.cat([pred[0:1], pred[1:][mask]])
             pred = pred[pred != self.blank]

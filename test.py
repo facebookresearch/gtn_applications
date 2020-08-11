@@ -74,6 +74,7 @@ def test(args):
         img_height=input_size,
         tokens_path=config["data"].get("tokens", None),
         lexicon_path=config["data"].get("lexicon", None),
+        use_words=config["data"].get("use_words", False),
     )
     data = dataset.Dataset(data_path, preprocessor, split=args.split)
     loader = utils.data_loader(data, config)
@@ -97,7 +98,7 @@ def test(args):
         for p, t in zip(predictions, targets):
             p, t = preprocessor.tokens_to_text(p), preprocessor.to_text(t)
             dist = editdistance.eval(p, t)
-            print("CER: {:.3f}".format(dist / len(t)))
+            print("CER: {:.3f}".format(dist / len(t) if len(t) > 0 else 0))
             print("HYP:", "".join(p))
             print("REF", "".join(t))
             print("=" * 80)
