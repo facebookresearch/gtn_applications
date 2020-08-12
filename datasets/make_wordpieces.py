@@ -16,12 +16,11 @@ def iamdb_pieces(args):
     train_text = [l["text"] for l in all_lines if l["key"] not in train]
     num_pieces = args.num_pieces
     sp = train_spm_model(
-        (t.replace("|", " ") for t in train_text),
+        iter(train_text),
         num_pieces + 1, # to account for <unk>
         user_symbols=["/"], # added so token is in the output set
     )
-    vocab = sorted(set(
-        w for t in text for w in t.replace("|", " ").split(" ") if w))
+    vocab = sorted(set(w for t in text for w in t.split("▁") if w))
     print(f"Generating word piece list of size {num_pieces}.")
     pieces = [sp.id_to_piece(i) for i in range(1, num_pieces + 1)]
     print(f"Encoding vocabulary of size {len(vocab)}.")
