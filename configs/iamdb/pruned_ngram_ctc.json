@@ -8,7 +8,7 @@
   },
   "criterion_type" : "transducer",
   "criterion" : {
-    "blank" : true,
+    "blank" : "optional",
     "allow_repeats" : false,
     "transitions" : "/checkpoint/awni/data/iamdb/transitions_wp1k_0.txt"
   },

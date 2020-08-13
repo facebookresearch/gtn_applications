@@ -355,10 +355,10 @@ def load_criterion(criterion_type, preprocessor, config):
             num_tokens + num_replabels + int(use_garbage),
         )
     elif criterion_type == "ctc":
-        use_pt = config.get("use_pt", True)
+        use_pt = config.get("use_pt", True) # use pytorch implementation 
         return CTC(num_tokens, use_pt), num_tokens + 1  # account for blank
     elif criterion_type == "transducer":
-        use_blank = config.get("blank", False)
+        blank = config.get("blank", "none") 
         transitions = config.get("transitions", None)
         if transitions is not None:
             transitions = gtn.load(transitions)
@@ -367,10 +367,10 @@ def load_criterion(criterion_type, preprocessor, config):
             preprocessor.graphemes_to_index,
             ngram=config.get("ngram", 0),
             transitions=transitions,
-            blank=use_blank,
+            blank=blank,
             allow_repeats=config.get("allow_repeats", True),
             reduction="mean",
         )
-        return criterion, num_tokens + use_blank
+        return criterion, num_tokens + int(blank != "none")
     else:
         raise ValueError(f"Unknown model type {criterion_type}")

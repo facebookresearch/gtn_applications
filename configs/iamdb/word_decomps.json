@@ -8,7 +8,7 @@
   },
   "criterion_type" : "transducer",
   "criterion" : {
-    "blank" : true,
+    "blank" : "optional",
     "allow_repeats" : false 
   },
   "model_type" : "tds2d",

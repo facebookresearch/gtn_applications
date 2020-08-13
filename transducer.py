@@ -61,36 +61,47 @@ def make_lexicon_graph(word_pieces, graphemes_to_idx):
     return graph
 
 
-def make_token_graph(token_list, blank=False, allow_repeats=True):
+def make_token_graph(token_list, blank="none", allow_repeats=True):
     """
     Constructs a graph with all the individual
     token transition models.
     """
+    if not allow_repeats and blank != "optional":
+        raise ValueError("Must use blank='optional' if disallowing repeats.")
+    
     ntoks = len(token_list)
     graph = gtn.Graph(False)
+
+    # Creating nodes
     graph.add_node(True, True)
     for i in range(ntoks):
         # We can consume one or more consecutive
         # word pieces for each emission:
         # E.g. [ab, ab, ab] transduces to [ab]
-        graph.add_node(False, True)
-        graph.add_arc(0, i + 1, i)
-        graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
-        if allow_repeats:
-            graph.add_arc(i + 1, 0, gtn.epsilon)
-
-    if blank:
+        graph.add_node(False, blank != "forced")
+    
+    if blank != "none":
         graph.add_node()
+
+    # Creating arcs
+    if blank != "none":
         # blank index is assumed to be last (ntoks)
         graph.add_arc(0, ntoks + 1, ntoks, gtn.epsilon)
         graph.add_arc(ntoks + 1, 0, gtn.epsilon)
 
-    if not allow_repeats:
-        if not blank:
-            raise ValueError("Must use blank if disallowing repeats.")
-        # For each token, allow a transition on blank or a transition on all
-        # other tokens.
-        for i in range(ntoks):
+    for i in range(ntoks):
+        graph.add_arc((ntoks + 1) if blank == "forced" else 0, i + 1, i)
+        graph.add_arc(i + 1, i + 1, i, gtn.epsilon)
+
+        if allow_repeats:
+            if blank == "forced":
+                # allow transition from token to blank only
+                graph.add_arc(i + 1, ntoks + 1, ntoks, gtn.epsilon)
+            else:
+                # allow transition from token to blank and all other tokens
+                graph.add_arc(i + 1, 0, gtn.epsilon)  
+        else :
+            # allow transitions to blank and all other tokens except the same token
             graph.add_arc(i + 1, ntoks + 1, ntoks, gtn.epsilon)
             for j in range(ntoks):
                 if i != j:
@@ -111,7 +122,10 @@ class Transducer(torch.nn.Module):
             "a", "b", ..) to their corresponding integer index.
         ngram (int) : Order of the token-level transition model. If `ngram=0`
             then no transition model is used.
-        blank (boolean) : Toggle the use of an optional blank inbetween tokens.
+        blank (string) : Specifies the usage of blank token
+            'none' - do not use blank token 
+            'optional' - allow an optional blank inbetween tokens
+            'forced' - force a blank inbetween tokens (also referred to as garbage token)
         allow_repeats (boolean) : If false, then we don't allow paths with
             consecutive tokens in the alignment graph. This keeps the graph
             unambiguous in the sense that the same input cannot transduce to
@@ -124,18 +138,20 @@ class Transducer(torch.nn.Module):
         graphemes_to_idx,
         ngram=0,
         transitions=None,
-        blank=False,
+        blank="none",
         allow_repeats=True,
         reduction="none",
     ):
         super(Transducer, self).__init__()
+        if blank not in ["optional", "forced", "none"]:
+            raise ValueError("Invalid value specificed for blank. Must be in ['optional', 'forced', 'none']")
         self.tokens = make_token_graph(tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         self.ngram = ngram
         if ngram > 0 and transitions is not None:
             raise ValueError("Only one of ngram and transitions may be specified")
         if ngram > 0:
-            transitions = make_transitions_graph(ngram, len(tokens) + blank, True)
+            transitions = make_transitions_graph(ngram, len(tokens) + int(blank != "none"), True)
 
         if transitions is not None:
             self.transitions = transitions
