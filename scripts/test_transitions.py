@@ -1,7 +1,7 @@
 import gtn
 import unittest
-
-from build_transitions import count_ngrams, prune_ngrams, build_graph
+import copy
+from build_transitions import count_ngrams, prune_ngrams, build_graph, add_blank_grams
 
 
 class TestTransitions(unittest.TestCase):
@@ -121,6 +121,48 @@ class TestTransitions(unittest.TestCase):
         for i in range(7):
             expected.add_arc(i, 7, gtn.epsilon)
         self.assertTrue(gtn.isomorphic(expected, graph))
+
+    def test_blank_build(self):
+            # a b c c c b a
+            grams = [
+                [(0,), (1,), (2,)],
+                [(-1, 0,), (0, 1), (1, 2,), (2, 1,), (1, 0,)],
+                [(-1, 0, 1), (0, 1, 2), (1, 2, 2), (2, 2, 2), (2, 2, 1), (2, 1, 0)],
+            ]
+            optional_grams = add_blank_grams(copy.deepcopy(grams), 3, "optional")
+            forced_grams = add_blank_grams(copy.deepcopy(grams), 3, "forced")
+            # fmt: off
+            expected_optional_grams = [
+                [(0,), (1,), (2,), (3,)],
+                [
+                    (-1, 0,), (0, 1), (1, 2,), (2, 1,), (1, 0,), (-1, 3),
+                    (0, 3), (1, 3), (2, 3), (3, 0), (3, 1), (3, 2)
+                ],
+                [
+                    (-1, 0, 1), (0, 1, 2), (1, 2, 2), (2, 2, 2), (2, 2, 1), (2, 1, 0), 
+                    (-1, 3, 0), (-1, 0, 3), (0, 1, 3), (0, 3, 1), (1, 3, 2), (2, 3, 2), 
+                    (2, 2, 3), (2, 3, 1), (2, 1, 3), (1, 3, 0), (1, 0, 3), (1, 2, 3), 
+                    (3, 0, 3), (3, 1, 3), (3, 2, 3), (3, 0, 1), (3, 1, 2), (3, 2, 2), 
+                    (3, 2, 1), (3, 1, 0),
+                ],
+            ]
+            expected_forced_grams = [
+                [(0,), (1,), (2,), (3,)],
+                [(-1, 3), (0, 3), (1, 3), (2, 3), (3, 0), (3, 1), (3, 2)],
+                [
+                    (-1, 3, 0), (3, 0, 3), (0, 3, 1), (3, 1, 3), (3, 2, 3),
+                    (2, 3, 2), (1, 3, 2), (2, 3, 1), (1, 3, 0),
+                ],
+            ]
+            # fmt: on
+            for a, b in [
+                (optional_grams, expected_optional_grams),
+                (forced_grams, expected_forced_grams),
+            ]:
+                self.assertEqual(len(a), len(b))
+                for i in range(len(a)):
+                    self.assertEqual(len(a[i]), len(b[i]))
+                    self.assertEqual(set(a[i]), set(b[i]))
 
 
 if __name__ == "__main__":
