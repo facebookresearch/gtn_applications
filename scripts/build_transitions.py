@@ -6,7 +6,7 @@ START_IDX = -1
 WORDSEP = "▁"
 
 
-def build_graph(ngrams):
+def build_graph(ngrams, disable_backoff = False):
     graph = gtn.Graph(False)
     ngram = len(ngrams)
     state_to_node = {}
@@ -19,12 +19,13 @@ def build_graph(ngrams):
         start = state == start_state
         node = graph.add_node(start, True)
         state_to_node[state] = node
-        # Add back off when adding node
-        for n in range(1, len(state) + 1):
-            back_off_node = state_to_node.get(state[n:], None)
-            # Epsilon transition to the back-off state
-            if back_off_node is not None:
-                graph.add_arc(node, back_off_node, gtn.epsilon)
+        if not disable_backoff:   
+            # Add back off when adding node
+            for n in range(1, len(state) + 1):
+                back_off_node = state_to_node.get(state[n:], None)
+                # Epsilon transition to the back-off state
+                if back_off_node is not None:
+                    graph.add_arc(node, back_off_node, gtn.epsilon)
         return node
 
     for grams in ngrams:
@@ -104,6 +105,19 @@ def add_blank_grams(pruned_ngrams, num_tokens, blank):
                         blank_grams[cur_gram] = True
     return pruned_ngrams
 
+def add_self_loops(pruned_ngrams):
+    maxorder = len(pruned_ngrams)
+    # use dict for fast search
+    all_grams = set([gram for grams in pruned_ngrams for gram in grams])
+    for o in range(1, maxorder):
+        for gram in pruned_ngrams[o-1]:
+            # repeat one of the tokens 
+            for pos in range(len(gram)):
+                new_gram = gram[:pos] + (gram[pos],) + gram[pos:]
+                if new_gram not in all_grams:
+                    pruned_ngrams[o].append(new_gram)
+                    all_grams.add(new_gram)
+    return pruned_ngrams
 
 def parse_lines(lines, lexicon):
     with open(lexicon, "r") as fid:
@@ -137,6 +151,8 @@ if __name__ == "__main__":
         "'optional' - allow an optional blank inbetween tokens"
         "'forced' - force a blank inbetween tokens (also referred to as garbage token)",
     )
+    parser.add_argument("--add_self_loops", action="store_true", help="Add self loops for tokens")
+    parser.add_argument("--disable_backoff", action="store_true", help="Disable backoff transitions")
     parser.add_argument(
         "--save_path", default=None, help="Path to save transition graph."
     )
@@ -168,8 +184,11 @@ if __name__ == "__main__":
     if args.blank != "none":
         pruned_ngrams = add_blank_grams(pruned_ngrams, len(tokens_to_idx), args.blank)
 
+    if args.add_self_loops:
+        pruned_ngrams = add_self_loops(pruned_ngrams)
+
     print("Building graph from pruned ngrams...")
-    graph = build_graph(pruned_ngrams)
+    graph = build_graph(pruned_ngrams, args.disable_backoff)
     print("Graph has {} arcs and {} nodes.".format(graph.num_arcs(), graph.num_nodes()))
 
     if args.save_path is not None:

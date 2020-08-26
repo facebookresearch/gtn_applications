@@ -21,6 +21,7 @@ def parse_args():
         "--config", type=str, help="A json configuration file for experiment."
     )
     parser.add_argument("--disable_cuda", action="store_true", help="Disable CUDA")
+    parser.add_argument("--restore", action="store_true", help="Restore training from last checkpoint")
     parser.add_argument(
         "--checkpoint_path",
         default="/tmp/",
@@ -168,6 +169,10 @@ def train(world_rank, args):
     model = models.load_model(
         config["model_type"], input_size, output_size, config["model"]
     ).to(device)
+
+    if args.restore:
+        models.load_from_checkpoint(model, criterion, args.checkpoint_path)
+
     n_params = sum(p.numel() for p in model.parameters())
     logging.info(
         "Training {} model with {:,} parameters.".format(config["model_type"], n_params)

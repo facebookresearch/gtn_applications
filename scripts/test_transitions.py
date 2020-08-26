@@ -1,7 +1,7 @@
 import gtn
 import unittest
 import copy
-from build_transitions import count_ngrams, prune_ngrams, build_graph, add_blank_grams
+from build_transitions import count_ngrams, prune_ngrams, build_graph, add_blank_grams, add_self_loops
 
 
 class TestTransitions(unittest.TestCase):
@@ -165,5 +165,17 @@ class TestTransitions(unittest.TestCase):
                     self.assertEqual(set(a[i]), set(b[i]))
 
 
+    def test_add_self_loops(self):
+        # unigram test case
+        ngrams = [[(0,), (1,), (2,)], [(0, 1,), (1, 2,)], [(0, 1, 2,)]]
+        # fmt: off
+        expected = [
+            [(0,), (1,), (2,)], 
+            [(0, 1), (1, 2), (0, 0), (1, 1), (2, 2)], 
+            [(0, 1, 2), (0, 0, 1), (0, 1, 1), (1, 1, 2), (1, 2, 2), (0, 0, 0), (1, 1, 1), (2, 2, 2)]
+        ]
+        # fmt: on
+        self.assertEqual(add_self_loops(ngrams) ,expected)
+        
 if __name__ == "__main__":
     unittest.main()

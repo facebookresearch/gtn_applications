@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import gtn
 from itertools import groupby
 import numpy as np
+import os 
 import torch
 import utils
 import transducer
@@ -374,3 +375,13 @@ def load_criterion(criterion_type, preprocessor, config):
         return criterion, num_tokens + int(blank != "none")
     else:
         raise ValueError(f"Unknown model type {criterion_type}")
+
+
+def load_from_checkpoint(model, criterion, checkpoint_path, load_last=False):
+    model_checkpoint = os.path.join(checkpoint_path, "model.checkpoint")
+    criterion_checkpoint = os.path.join(checkpoint_path, "criterion.checkpoint")
+    if not load_last:
+        model_checkpoint += ".best"
+        criterion_checkpoint += ".best"
+    model.load_state_dict(torch.load(model_checkpoint))
+    criterion.load_state_dict(torch.load(criterion_checkpoint))

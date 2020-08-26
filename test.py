@@ -42,16 +42,6 @@ def parse_args():
     return args
 
 
-def load(model, criterion, checkpoint_path, load_last=False):
-    model_checkpoint = os.path.join(checkpoint_path, "model.checkpoint")
-    criterion_checkpoint = os.path.join(checkpoint_path, "criterion.checkpoint")
-    if not load_last:
-        model_checkpoint += ".best"
-        criterion_checkpoint += ".best"
-    model.load_state_dict(torch.load(model_checkpoint))
-    criterion.load_state_dict(torch.load(criterion_checkpoint))
-
-
 @torch.no_grad()
 def test(args):
     with open(args.config, "r") as fid:
@@ -86,7 +76,7 @@ def test(args):
     model = models.load_model(
         config["model_type"], input_size, output_size, config["model"]
     ).to(device)
-    load(model, criterion, args.checkpoint_path, args.load_last)
+    models.load_from_checkpoint(model, criterion, args.checkpoint_path, args.load_last)
 
     model.eval()
     meters = utils.Meters()
