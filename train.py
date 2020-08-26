@@ -171,7 +171,7 @@ def train(world_rank, args):
     ).to(device)
 
     if args.restore:
-        models.load_from_checkpoint(model, criterion, args.checkpoint_path)
+        models.load_from_checkpoint(model, criterion, args.checkpoint_path, True)
 
     n_params = sum(p.numel() for p in model.parameters())
     logging.info(
