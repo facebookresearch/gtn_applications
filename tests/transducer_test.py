@@ -7,9 +7,84 @@ import math
 import torch
 import unittest
 
+import transducer
 from transducer import Transducer, make_transitions_graph
 from utils import CTCLoss
 from torch.autograd import gradcheck
+
+
+class TestConvTransducer(unittest.TestCase):
+    def test_kernel_graph(self):
+        def get_graph(l1, l2, add_skip=False):
+            g = gtn.Graph()
+            g.add_node(True)
+            g.add_node(True)
+            g.add_node()
+            g.add_node(False, True)
+            g.add_node(False, True)
+            g.add_arc(0, 0, 2)
+            g.add_arc(0, 1, l1)
+            g.add_arc(1, 1, l1)
+            g.add_arc(1, 2, 2)
+            g.add_arc(2, 2, 2)
+            g.add_arc(2, 3, l2)
+            g.add_arc(3, 3, l2)
+            g.add_arc(3, 4, 2)
+            g.add_arc(4, 4, 2)
+            if add_skip:
+                g.add_arc(1, 3, l2)
+            return g
+
+        # Repeats with optional blank
+        graph = transducer.make_kernel_graph([0, 0], 2, True)
+        gtn.equal(graph, get_graph(0, 0, False))
+
+        # No repeats without optional blank
+        graph = transducer.make_kernel_graph([0, 1], 2, False)
+        gtn.equal(graph, get_graph(0, 1, False))
+
+        # No repeats with optional blank
+        graph = transducer.make_kernel_graph([0, 1], 2, True)
+        gtn.equal(graph, get_graph(0, 1, True))
+
+    def test_fwd(self):
+        lexicon = [(0, 0), (0, 1), (1, 0), (1, 1)]
+        blank_idx = 2
+        kernel_size = 5
+        stride = 3
+        convTrans = transducer.ConvTransduce1D(
+            lexicon, kernel_size, stride, blank_idx)
+
+        B = 2
+        C = 3
+        for Tin in [0, 1, 2, 3, 4]:
+            inputs = torch.randn(B, Tin, C)
+            with self.assertRaises(ValueError):
+                convTrans(inputs)
+
+        Tin = (5, 7, 8, 10, 11, 12)
+        Tout = (1, 1, 2, 2, 3, 3)
+        for Ti, To in zip(Tin, Tout):
+            inputs = torch.randn(B, Ti, C)
+            outputs = convTrans(inputs)
+            self.assertEquals(outputs.shape, (B, To, len(lexicon)))
+
+    def test_bwd(self):
+        lexicon = [(0, 0), (0, 1), (1, 0), (1, 1)]
+        blank_idx = 2
+        kernel_size = 5
+        stride = 3
+        convTrans = transducer.ConvTransduce1D(
+            lexicon, kernel_size, stride, blank_idx)
+
+        B = 2
+        C = 3
+        Tin = (5, 7, 8, 10, 11, 12)
+        Tout = (1, 1, 2, 2, 3, 3)
+        for Ti, To in zip(Tin, Tout):
+            inputs = torch.randn(B, Ti, C, requires_grad=True)
+            outputs = convTrans(inputs)
+            outputs.backward(torch.ones_like(outputs))
 
 
 class TestTransducer(unittest.TestCase):
