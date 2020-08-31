@@ -57,12 +57,16 @@ class TestConvTransducer(unittest.TestCase):
 
         B = 2
         C = 3
-        for Tin in [0, 1, 2, 3, 4]:
+        # Zero length inputs not allowed
+        inputs = torch.randn(B, 0, C)
+        with self.assertRaises(ValueError):
+            convTrans(inputs)
+        # Other inputs should be padded to be larger than kernel_size
+        for Tin in [1, 2, 3, 4]:
             inputs = torch.randn(B, Tin, C)
-            with self.assertRaises(ValueError):
-                convTrans(inputs)
+            convTrans(inputs)
 
-        Tin = (5, 7, 8, 10, 11, 12)
+        Tin = (1, 3, 4, 6, 7, 8)
         Tout = (1, 1, 2, 2, 3, 3)
         for Ti, To in zip(Tin, Tout):
             inputs = torch.randn(B, Ti, C)
@@ -79,7 +83,7 @@ class TestConvTransducer(unittest.TestCase):
 
         B = 2
         C = 3
-        Tin = (5, 7, 8, 10, 11, 12)
+        Tin = (1, 3, 4, 6, 7, 8)
         Tout = (1, 1, 2, 2, 3, 3)
         for Ti, To in zip(Tin, Tout):
             inputs = torch.randn(B, Ti, C, requires_grad=True)
@@ -102,13 +106,13 @@ class TestTransducer(unittest.TestCase):
 
         # Check with blank:
         labels = [[0, 0]]
-        transducer = Transducer(tokens=["a"], graphemes_to_idx={"a": 0}, blank=True)
+        transducer = Transducer(tokens=["a"], graphemes_to_idx={"a": 0}, blank="optional")
         self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
 
         # Check with repeats not allowed:
         labels = [[0, 0]]
         transducer = Transducer(
-            tokens=["a"], graphemes_to_idx={"a": 0}, blank=True, allow_repeats=False
+            tokens=["a"], graphemes_to_idx={"a": 0}, blank="optional", allow_repeats=False
         )
         self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
 
@@ -122,7 +126,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=["a", "b", "c"],
             graphemes_to_idx={"a": 0, "b": 1, "c": 2},
-            blank=True,
+            blank="optional",
         )
         fwd = transducer(log_probs, labels)
         self.assertAlmostEqual(fwd.item(), -math.log(0.25 * 0.25 * 0.25 * 5))
@@ -149,7 +153,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=["a", "b", "c", "d", "e"],
             graphemes_to_idx={"a": 0, "b": 1, "c": 2, "d": 3, "e": 4},
-            blank=True,
+            blank="optional",
         )
 
         loss = transducer(log_emissions, labels)
@@ -184,7 +188,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=["a", "b", "c", "d", "e"],
             graphemes_to_idx={"a": 0, "b": 1, "c": 2, "d": 3, "e": 4},
-            blank=True,
+            blank="optional",
             allow_repeats=False,
         )
         loss = transducer(log_emissions, labels)
@@ -280,7 +284,7 @@ class TestTransducer(unittest.TestCase):
             transducer = Transducer(
                 tokens=tokens,
                 graphemes_to_idx=graphemes_to_idx,
-                blank=True,
+                blank="optional",
                 allow_repeats=False,
                 reduction=reduction,
             )
@@ -333,7 +337,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=["a", "b", "c", "d"],
             graphemes_to_idx={"a": 0, "b": 1, "c": 2, "d": 3},
-            blank=False,
+            blank="none",
         )
         emissions = torch.stack([emissions1, emissions2], dim=0)
         predictions = transducer.viterbi(emissions)
@@ -344,7 +348,7 @@ class TestTransducer(unittest.TestCase):
         transducer = Transducer(
             tokens=["a", "b", "c"],
             graphemes_to_idx={"a": 0, "b": 1, "c": 2},
-            blank=True,
+            blank="optional",
             allow_repeats=False,
         )
         emissions = torch.stack([emissions1, emissions2], dim=0)
