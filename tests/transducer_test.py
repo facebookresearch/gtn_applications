@@ -71,7 +71,7 @@ class TestConvTransducer(unittest.TestCase):
         for Ti, To in zip(Tin, Tout):
             inputs = torch.randn(B, Ti, C)
             outputs = convTrans(inputs)
-            self.assertEquals(outputs.shape, (B, To, len(lexicon)))
+            self.assertEqual(outputs.shape, (B, To, len(lexicon)))
 
     def test_bwd(self):
         lexicon = [(0, 0), (0, 1), (1, 0), (1, 1)]
@@ -487,7 +487,6 @@ class TestTransducer(unittest.TestCase):
         trans_grad = transducer.transition_params.grad[N:].view(N, N).T
         self.assertTrue(trans_grad.allclose(expected_trans_grad, rtol=1e-03))
 
-
     def test_asg_viterbi(self):
         T = 4
         N = 4
@@ -509,6 +508,38 @@ class TestTransducer(unittest.TestCase):
         transducer.transition_params.data = transitions
         path = transducer.viterbi(inputs)[0].tolist()
         self.assertTrue(path == expected_path)
+
+    def test_backoff_transitions(self):
+        transitions = gtn.load("trans_backoff_test.txt")
+        T = 4
+        N = 5
+        inputs = torch.randn(1, T, N, dtype=torch.float, requires_grad=True)
+        labels = [[0, 1, 0]]
+        tokens = [(n,) for n in range(N)]
+        graphemes_to_idx = {n: n for n in range(N)}
+        transducer = Transducer(
+            tokens=tokens,
+            graphemes_to_idx=graphemes_to_idx,
+            blank="optional",
+            allow_repeats=False,
+            transitions=transitions)
+        loss = transducer(inputs, labels)
+        loss.backward()
+        trans_p = transducer.transition_params
+        analytic_grad = trans_p.grad
+        epsilon = 1e-3
+        numerical_grad = []
+        with torch.no_grad():
+            for i in range(trans_p.numel()):
+                transducer.transition_params.data[i] += epsilon
+                loss_up = transducer(inputs, labels).item()
+                transducer.transition_params.data[i] -= 2*epsilon
+                loss_down = transducer(inputs, labels).item()
+                numerical_grad.append((loss_up - loss_down) / (2 * epsilon))
+                transducer.transition_params.data[i] += epsilon
+        numerical_grad = torch.tensor(numerical_grad)
+        self.assertTrue(torch.allclose(
+            analytic_grad, numerical_grad, rtol=1e-3, atol=1e-3))
 
 
 if __name__ == "__main__":

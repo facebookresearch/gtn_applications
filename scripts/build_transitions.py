@@ -19,7 +19,7 @@ def build_graph(ngrams, disable_backoff = False):
         start = state == start_state
         node = graph.add_node(start, True)
         state_to_node[state] = node
-        if not disable_backoff:   
+        if not disable_backoff:
             # Add back off when adding node
             for n in range(1, len(state) + 1):
                 back_off_node = state_to_node.get(state[n:], None)
@@ -75,7 +75,7 @@ def add_blank_grams(pruned_ngrams, num_tokens, blank):
     pruned_ngrams[0].append(tuple([num_tokens]))
     blank_grams[tuple([num_tokens])] = True
     for gram in all_grams:
-        # Iterate over all possibilities by using a vector of 0s, 1s to 
+        # Iterate over all possibilities by using a vector of 0s, 1s to
         # denote whether a blank is being used at each position
         if blank == "optional":
             # given a gram ab.. of order n, we have have n+1 positions
@@ -111,7 +111,7 @@ def add_self_loops(pruned_ngrams):
     all_grams = set([gram for grams in pruned_ngrams for gram in grams])
     for o in range(1, maxorder):
         for gram in pruned_ngrams[o-1]:
-            # repeat one of the tokens 
+            # repeat one of the tokens
             for pos in range(len(gram)):
                 new_gram = gram[:pos] + (gram[pos],) + gram[pos:]
                 if new_gram not in all_grams:
