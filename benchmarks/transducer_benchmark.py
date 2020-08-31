@@ -31,7 +31,7 @@ def word_decompositions():
         targets.append(torch.tensor(target))
 
     crit = transducer.Transducer(
-        tokens, graphemes_to_index, blank=True, allow_repeats=False, reduction="mean"
+        tokens, graphemes_to_index, blank="optional", allow_repeats=False, reduction="mean"
     )
 
     def fwd_bwd():
@@ -64,7 +64,7 @@ def ngram_ctc():
     for ngram in [0, 1, 2]:
         crit = transducer.Transducer(
             tokens, graphemes_to_index,
-            ngram=ngram, blank=True,
+            ngram=ngram, blank="optional",
             allow_repeats=False, reduction="mean"
         )
         def fwd_bwd():

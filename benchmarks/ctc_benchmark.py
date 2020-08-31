@@ -27,4 +27,4 @@ def func():
     op = CTCLoss(inputs, tgt, N - 1)
     op.backward()
 
-time_func(func, name="asg fwd + bwd")
+time_func(func, name="ctc fwd + bwd")
