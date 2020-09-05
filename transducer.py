@@ -29,20 +29,30 @@ def make_chain_graph(sequence):
 
 def make_transitions_graph(ngram, num_tokens, calc_grad=False):
     transitions = gtn.Graph(calc_grad)
-    transitions.add_node(True, True)
+    transitions.add_node(True, ngram == 1)
+
+    state_map = {(): 0}
 
     # first build transitions which include <s>:
     for n in range(1, ngram):
         for state in itertools.product(range(num_tokens), repeat=n):
-            in_idx = sum((s + 1) * (num_tokens**e) for e, s in enumerate(state[:-1]))
-            out_idx = transitions.add_node(False, True)
+            in_idx = state_map[state[:-1]]
+            out_idx = transitions.add_node(False, ngram == 1)
+            state_map[state] = out_idx
             transitions.add_arc(in_idx, out_idx, state[-1])
 
     for state in itertools.product(range(num_tokens), repeat=ngram):
-        state_idx = sum((s + 1) * (num_tokens**e) for e, s in enumerate(state[:-1]))
-        new_state_idx = sum((s + 1) * (num_tokens**e) for e, s in enumerate(state[1:]))
+        state_idx = state_map[state[:-1]]
+        new_state_idx = state_map[state[1:]]
         # p(state[-1] | state[:-1])
         transitions.add_arc(state_idx, new_state_idx, state[-1])
+
+    if ngram > 1:
+        # build transitions which include </s>:
+        end_idx = transitions.add_node(False, True)
+        for in_idx in range(end_idx):
+            transitions.add_arc(in_idx, end_idx, gtn.epsilon)
+
     return transitions
 
 
@@ -102,7 +112,7 @@ def make_token_graph(token_list, blank="none", allow_repeats=True):
             else:
                 # allow transition from token to blank and all other tokens
                 graph.add_arc(i + 1, 0, gtn.epsilon)
-        else :
+        else:
             # allow transitions to blank and all other tokens except the same token
             graph.add_arc(i + 1, ntoks + 1, ntoks, gtn.epsilon)
             for j in range(ntoks):
@@ -146,20 +156,25 @@ class Transducer(torch.nn.Module):
     ):
         super(Transducer, self).__init__()
         if blank not in ["optional", "forced", "none"]:
-            raise ValueError("Invalid value specificed for blank. Must be in ['optional', 'forced', 'none']")
+            raise ValueError(
+                "Invalid value specificed for blank. Must be in ['optional', 'forced', 'none']"
+            )
         self.tokens = make_token_graph(tokens, blank=blank, allow_repeats=allow_repeats)
         self.lexicon = make_lexicon_graph(tokens, graphemes_to_idx)
         self.ngram = ngram
         if ngram > 0 and transitions is not None:
             raise ValueError("Only one of ngram and transitions may be specified")
         if ngram > 0:
-            transitions = make_transitions_graph(ngram, len(tokens) + int(blank != "none"), True)
+            transitions = make_transitions_graph(
+                ngram, len(tokens) + int(blank != "none"), True
+            )
 
         if transitions is not None:
             self.transitions = transitions
             self.transitions.arc_sort()
             self.transition_params = torch.nn.Parameter(
-                torch.zeros(self.transitions.num_arcs()))
+                torch.zeros(self.transitions.num_arcs())
+            )
         else:
             self.transitions = None
             self.transition_params = None
@@ -176,7 +191,8 @@ class Transducer(torch.nn.Module):
             self.lexicon,
             self.transition_params,
             self.transitions,
-            self.reduction)
+            self.reduction,
+        )
 
     def viterbi(self, outputs):
         B, T, C = outputs.shape
@@ -219,15 +235,21 @@ class Transducer(torch.nn.Module):
 class TransducerLossFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-            ctx, inputs, targets, tokens, lexicon,
-            transition_params=None, transitions=None, reduction="none"):
+        ctx,
+        inputs,
+        targets,
+        tokens,
+        lexicon,
+        transition_params=None,
+        transitions=None,
+        reduction="none",
+    ):
         B, T, C = inputs.shape
         losses = [None] * B
         emissions_graphs = [None] * B
         if transitions is not None:
             if transition_params is None:
-                raise ValueError(
-                    "Specified transitions, but not transition params.")
+                raise ValueError("Specified transitions, but not transition params.")
             cpu_data = transition_params.cpu().contiguous()
             transitions.set_weights(cpu_data.data_ptr())
             transitions.calc_grad = transition_params.requires_grad
@@ -312,22 +334,22 @@ class TransducerLossFunction(torch.autograd.Function):
 
         if calc_emissions:
             input_grad = input_grad.to(grad_output.device)
-            input_grad *= (grad_output / B)
+            input_grad *= grad_output / B
 
         if ctx.needs_input_grad[4]:
             grad = transitions.grad().weights_to_numpy()
             transition_grad = torch.tensor(grad).to(grad_output.device)
-            transition_grad *= (grad_output / B)
+            transition_grad *= grad_output / B
         else:
             transition_grad = None
 
         return (
             input_grad,
-            None, # target
-            None, # tokens
-            None, # lex
-            transition_grad, # transition params
-            None, # transitions graph
+            None,  # target
+            None,  # tokens
+            None,  # lex
+            transition_grad,  # transition params
+            None,  # transitions graph
             None,
         )
 
@@ -344,7 +366,7 @@ def make_kernel_graph(x, blank_idx, blank_optional, spike=False, calc_grad=False
             g.add_arc(2 * i + 1, 2 * i + 1, c)
         g.add_arc(2 * i + 1, 2 * i + 2, blank_idx)
         g.add_arc(2 * i + 2, 2 * i + 2, blank_idx)
-        if i > 0 and blank_optional and x[i-1] != c:
+        if i > 0 and blank_optional and x[i - 1] != c:
             g.add_arc(2 * i - 1, 2 * i + 1, c)
     g.arc_sort(True)
     g.arc_sort()
@@ -355,8 +377,20 @@ class ConvTransduce1D(torch.nn.Module):
     """
     A 1D convolutional transducer layer.
     """
-    def __init__(self, lexicon, kernel_size, stride, blank_idx, blank_optional=True,
-            learn_params=False, scale="none", normalize="none", viterbi=False, spike=False):
+
+    def __init__(
+        self,
+        lexicon,
+        kernel_size,
+        stride,
+        blank_idx,
+        blank_optional=True,
+        learn_params=False,
+        scale="none",
+        normalize="none",
+        viterbi=False,
+        spike=False,
+    ):
         """
         Args:
             learn_params: If True, learn the kernel parameters
@@ -387,14 +421,18 @@ class ConvTransduce1D(torch.nn.Module):
         self.kernel_size = kernel_size
         assert self.kernel_size % 2 != 0, "Use an odd kernel size for easy padding."
         self.stride = stride
+
         def size_with_rep(token):
             reps = sum(t1 == t2 for t1, t2 in zip(token[:-1], token[1:]))
             return len(token) + reps
+
         min_kernel_size = max(size_with_rep(l) for l in lexicon)
         if kernel_size < min_kernel_size:
             raise ValueError(f"Kernel size needed of at least {min_kernel_size}.")
-        self.kernels = [make_kernel_graph(l, blank_idx, blank_optional, spike=spike)
-            for l in lexicon]
+        self.kernels = [
+            make_kernel_graph(l, blank_idx, blank_optional, spike=spike)
+            for l in lexicon
+        ]
 
         num_arcs = sum(k.num_arcs() for k in self.kernels)
         self.kernel_params = None
@@ -408,8 +446,13 @@ class ConvTransduce1D(torch.nn.Module):
         if self.normalize == "pre":
             inputs = torch.nn.functional.log_softmax(inputs, dim=2)
         outputs = ConvTransduce1DFunction.apply(
-            inputs, self.kernels, self.kernel_size,
-            self.stride, self.kernel_params, self.viterbi)
+            inputs,
+            self.kernels,
+            self.kernel_size,
+            self.stride,
+            self.kernel_params,
+            self.viterbi,
+        )
         outputs = outputs / self.scale
         if self.normalize == "post":
             outputs = torch.nn.functional.softmax(outputs, dim=2)
@@ -420,15 +463,16 @@ class ConvTransduce1D(torch.nn.Module):
 
 CTX_GRAPHS = None
 
-class ConvTransduce1DFunction(torch.autograd.Function):
 
+class ConvTransduce1DFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, inputs, kernels, kernel_size, stride, kernel_params=None, viterbi=False):
+    def forward(
+        ctx, inputs, kernels, kernel_size, stride, kernel_params=None, viterbi=False
+    ):
         B, T, C = inputs.shape
         if T < kernel_size:
             # Padding should be done outside of this function:
-            raise ValueError(
-                f"Input ({T}) too short for kernel ({kernel_size})")
+            raise ValueError(f"Input ({T}) too short for kernel ({kernel_size})")
         cpu_inputs = inputs.cpu()
         output_graphs = [[] for _ in range(B)]
         input_graphs = [[] for _ in range(B)]
@@ -438,7 +482,7 @@ class ConvTransduce1DFunction(torch.autograd.Function):
             s = 0
             for kernel in kernels:
                 na = kernel.num_arcs()
-                data_ptr = cpu_data[s:s + na].data_ptr()
+                data_ptr = cpu_data[s : s + na].data_ptr()
                 s += na
                 kernel.set_weights(data_ptr)
                 kernel.calc_grad = kernel_params.requires_grad
@@ -447,16 +491,18 @@ class ConvTransduce1DFunction(torch.autograd.Function):
         def process(b):
             for t in range(0, T - kernel_size + 1, stride):
                 input_graph = gtn.linear_graph(kernel_size, C, inputs.requires_grad)
-                window = cpu_inputs[b, t:t + kernel_size, :].contiguous()
+                window = cpu_inputs[b, t : t + kernel_size, :].contiguous()
                 input_graph.set_weights(window.data_ptr())
                 if viterbi:
                     window_outputs = [
                         gtn.viterbi_score(gtn.intersect(input_graph, kernel))
-                            for kernel in kernels]
+                        for kernel in kernels
+                    ]
                 else:
                     window_outputs = [
                         gtn.forward_score(gtn.intersect(input_graph, kernel))
-                            for kernel in kernels]
+                        for kernel in kernels
+                    ]
                 output_graphs[b].append(window_outputs)
 
                 # Save for backward:
@@ -474,10 +520,10 @@ class ConvTransduce1DFunction(torch.autograd.Function):
         ctx.input_shape = inputs.shape
         ctx.kernel_size = kernel_size
         ctx.stride = stride
-        outputs = [[[
-            o.item() for o in window]
-                for window in example]
-                    for example in output_graphs]
+        outputs = [
+            [[o.item() for o in window] for window in example]
+            for example in output_graphs
+        ]
         return torch.tensor(outputs).to(inputs.device)
 
     @staticmethod
@@ -488,13 +534,19 @@ class ConvTransduce1DFunction(torch.autograd.Function):
         stride = ctx.stride
         input_grad = torch.zeros((B, T, C))
         deltas = grad_output.cpu().numpy()
+
         def process(b):
             for t, window in enumerate(output_graphs[b]):
                 for c, out in enumerate(window):
                     delta = make_scalar_graph(deltas[b, t, c])
                     gtn.backward(out, delta)
-                grad = input_graphs[b][t].grad().weights_to_numpy().reshape(kernel_size, -1)
-                input_grad[b, t*stride:t*stride+kernel_size] += grad
+                grad = (
+                    input_graphs[b][t]
+                    .grad()
+                    .weights_to_numpy()
+                    .reshape(kernel_size, -1)
+                )
+                input_grad[b, t * stride : t * stride + kernel_size] += grad
 
         executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
         futures = [executor.submit(process, b) for b in range(B)]
@@ -510,11 +562,11 @@ class ConvTransduce1DFunction(torch.autograd.Function):
             kernel_grads = None
         return (
             input_grad.to(grad_output.device),
-            None, # kernels
-            None, # kernel_size
-            None, # stride
+            None,  # kernels
+            None,  # kernel_size
+            None,  # stride
             kernel_grads,
-            None, # viterbi
+            None,  # viterbi
         )
 
 

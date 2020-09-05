@@ -9,7 +9,7 @@ import unittest
 
 import transducer
 from transducer import Transducer, make_transitions_graph
-from utils import CTCLoss
+from utils import CTCLoss, ASGLossFunction
 from torch.autograd import gradcheck
 
 
@@ -52,8 +52,7 @@ class TestConvTransducer(unittest.TestCase):
         blank_idx = 2
         kernel_size = 5
         stride = 3
-        convTrans = transducer.ConvTransduce1D(
-            lexicon, kernel_size, stride, blank_idx)
+        convTrans = transducer.ConvTransduce1D(lexicon, kernel_size, stride, blank_idx)
 
         B = 2
         C = 3
@@ -78,8 +77,7 @@ class TestConvTransducer(unittest.TestCase):
         blank_idx = 2
         kernel_size = 5
         stride = 3
-        convTrans = transducer.ConvTransduce1D(
-            lexicon, kernel_size, stride, blank_idx)
+        convTrans = transducer.ConvTransduce1D(lexicon, kernel_size, stride, blank_idx)
 
         B = 2
         C = 3
@@ -92,7 +90,6 @@ class TestConvTransducer(unittest.TestCase):
 
 
 class TestTransducer(unittest.TestCase):
-
     def test_fwd_trivial(self):
         T = 3
         N = 2
@@ -106,13 +103,18 @@ class TestTransducer(unittest.TestCase):
 
         # Check with blank:
         labels = [[0, 0]]
-        transducer = Transducer(tokens=["a"], graphemes_to_idx={"a": 0}, blank="optional")
+        transducer = Transducer(
+            tokens=["a"], graphemes_to_idx={"a": 0}, blank="optional"
+        )
         self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
 
         # Check with repeats not allowed:
         labels = [[0, 0]]
         transducer = Transducer(
-            tokens=["a"], graphemes_to_idx={"a": 0}, blank="optional", allow_repeats=False
+            tokens=["a"],
+            graphemes_to_idx={"a": 0},
+            blank="optional",
+            allow_repeats=False,
         )
         self.assertAlmostEqual(transducer(log_probs, labels).item(), 0.0)
 
@@ -369,36 +371,43 @@ class TestTransducer(unittest.TestCase):
         # bigram
         transitions = make_transitions_graph(2, num_tokens)
         expected = gtn.Graph()
-        expected.add_node(True, True)
+        expected.add_node(True, False)
         for i in range(num_tokens):
-            expected.add_node(False, True)
-            expected.add_arc(0, i+1, i)
+            expected.add_node(False, False)
+            expected.add_arc(0, i + 1, i)
         for i in range(num_tokens):
             for j in range(num_tokens):
-                expected.add_arc(i+1, j+1, j)
+                expected.add_arc(i + 1, j + 1, j)
+        expected.add_node(False, True)
+        for i in range(num_tokens + 1):
+            expected.add_arc(i, num_tokens + 1, gtn.epsilon)
+
         self.assertTrue(gtn.isomorphic(transitions, expected))
 
         # trigram
         transitions = make_transitions_graph(3, num_tokens)
         expected = gtn.Graph()
-        expected.add_node(True, True)
+        expected.add_node(True, False)
         for i in range(num_tokens):
-            expected.add_node(False, True)
+            expected.add_node(False, False)
             expected.add_arc(0, i + 1, i)
         for i in range(num_tokens):
             for j in range(num_tokens):
-                expected.add_node(False, True)
-                expected.add_arc(
-                    i + 1,
-                    num_tokens * i + j + num_tokens + 1,
-                    j)
+                expected.add_node(False, False)
+                expected.add_arc(i + 1, num_tokens * i + j + num_tokens + 1, j)
         for i in range(num_tokens):
             for j in range(num_tokens):
                 for k in range(num_tokens):
                     expected.add_arc(
                         num_tokens * i + j + num_tokens + 1,
                         num_tokens * j + k + num_tokens + 1,
-                        k)
+                        k,
+                    )
+        end_idx = expected.add_node(False, True)
+        self.assertEqual(end_idx, num_tokens * num_tokens + num_tokens + 1)
+        for i in range(end_idx):
+            expected.add_arc(i, end_idx, gtn.epsilon)
+
         self.assertTrue(gtn.isomorphic(transitions, expected))
 
     def test_asg(self):
@@ -435,10 +444,14 @@ class TestTransducer(unittest.TestCase):
 
         tokens = [(n,) for n in range(N)]
         graphemes_to_idx = {n: n for n in range(N)}
+        asg_transitions = ASGLossFunction.create_transitions_graph(
+            torch.zeros(N + 1, N)
+        )
         transducer = Transducer(
             tokens=tokens,
             graphemes_to_idx=graphemes_to_idx,
-            ngram=2)
+            transitions=asg_transitions,
+        )
 
         loss = transducer(emissions, labels)
         self.assertAlmostEqual(loss.item(), 7.47995, places=4)
@@ -467,7 +480,7 @@ class TestTransducer(unittest.TestCase):
                     [0.2197, -0.1466, -0.5742, 0.1510, 0.2160, 0.1342],
                     [0.1050, -0.8265, 0.1714, 0.1917, 0.1488, 0.2094],
                 ],
-            ],
+            ]
         )
         expected_grad = expected_grad / B
         self.assertTrue(emissions.grad.allclose(expected_grad, rtol=1e-03))
@@ -480,37 +493,39 @@ class TestTransducer(unittest.TestCase):
                     [0.3694, -0.6688, 0.3047, -0.8531, -0.6571, 0.2870],
                     [0.3866, 0.3321, 0.3447, 0.3664, -0.2163, 0.3039],
                     [0.3640, -0.6943, 0.2988, -0.6722, 0.3215, -0.1860],
-                ],
+                ]
             ).view(N, N)
             / B
         )
-        trans_grad = transducer.transition_params.grad[N:].view(N, N).T
-        self.assertTrue(trans_grad.allclose(expected_trans_grad, rtol=1e-03))
+        trans_grad = transducer.transition_params.grad[N:].view(N, N)
+        self.assertTrue(trans_grad.allclose(expected_trans_grad, rtol=1e-02))
 
     def test_asg_viterbi(self):
         T = 4
-        N = 4
+        N = 3
         inputs = torch.tensor(
-            [0, 0, 0, 7, 0, 5, 4, 3, 0, 5, 8, 5, 0, 5, 4, 3],
-            dtype=torch.float32,
+            [0, 0, 7, 5, 4, 3, 5, 8, 5, 5, 4, 3], dtype=torch.float32
         ).view(1, T, N)
         transitions = torch.tensor(
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 2, 0],
-            dtype=torch.float32,
-        ).view(N + 1, N)
-        expected_path = [3, 2, 1]
+            [0, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0], dtype=torch.float32
+        )
+        expected_path = [2, 1, 0]
         tokens = [(n,) for n in range(N)]
         graphemes_to_idx = {n: n for n in range(N)}
+        asg_transitions = ASGLossFunction.create_transitions_graph(
+            torch.zeros(N + 1, N)
+        )
         transducer = Transducer(
             tokens=tokens,
             graphemes_to_idx=graphemes_to_idx,
-            ngram=2)
+            transitions=asg_transitions,
+        )
         transducer.transition_params.data = transitions
         path = transducer.viterbi(inputs)[0].tolist()
         self.assertTrue(path == expected_path)
 
     def test_backoff_transitions(self):
-        transitions = gtn.load("trans_backoff_test.txt")
+        transitions = gtn.loadtxt("trans_backoff_test.txt")
         T = 4
         N = 5
         inputs = torch.randn(1, T, N, dtype=torch.float, requires_grad=True)
@@ -522,7 +537,8 @@ class TestTransducer(unittest.TestCase):
             graphemes_to_idx=graphemes_to_idx,
             blank="optional",
             allow_repeats=False,
-            transitions=transitions)
+            transitions=transitions,
+        )
         loss = transducer(inputs, labels)
         loss.backward()
         trans_p = transducer.transition_params
@@ -533,13 +549,14 @@ class TestTransducer(unittest.TestCase):
             for i in range(trans_p.numel()):
                 transducer.transition_params.data[i] += epsilon
                 loss_up = transducer(inputs, labels).item()
-                transducer.transition_params.data[i] -= 2*epsilon
+                transducer.transition_params.data[i] -= 2 * epsilon
                 loss_down = transducer(inputs, labels).item()
                 numerical_grad.append((loss_up - loss_down) / (2 * epsilon))
                 transducer.transition_params.data[i] += epsilon
         numerical_grad = torch.tensor(numerical_grad)
-        self.assertTrue(torch.allclose(
-            analytic_grad, numerical_grad, rtol=1e-3, atol=1e-3))
+        self.assertTrue(
+            torch.allclose(analytic_grad, numerical_grad, rtol=1e-3, atol=1e-3)
+        )
 
 
 if __name__ == "__main__":
