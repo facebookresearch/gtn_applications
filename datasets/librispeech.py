@@ -1,82 +1,71 @@
-import collections
 import itertools
+import json
 import multiprocessing as mp
 import os
-import PIL.Image
-import random
 import re
 import torch
-from torchvision import transforms
+import torchaudio
+import torchvision
 
 
 SPLITS = {
-    "train": ["trainset"],
-    "validation": ["validationset1"],
-    "test": ["validationset2", "testset"],
+    "train": ["train-clean-100"],
+    "validation": ["dev-clean", "dev-other"],
+    "test": ["test-clean", "test-other"],
 }
 
 WORDSEP = "▁"
+SAMPLE_RATE = 16000
+
+
+def log_transform(x):
+    return torch.log(x + 1e-6)
 
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_path, preprocessor, split, augment=False):
-        forms = load_metadata(data_path, use_words=preprocessor.use_words)
-
-        # Get split keys:
-        splits = SPLITS.get(split, None)
-        if splits is None:
-            split_names = ", ".join(f"'{k}'" for k in SPLITS.keys())
-            raise ValueError(f"Invalid split {split}, must be in [{split_names}].")
-
-        split_keys = []
-        for s in splits:
-            with open(os.path.join(data_path, f"{s}.txt"), "r") as fid:
-                split_keys.extend((l.strip() for l in fid))
+        data = []
+        for sp in SPLITS[split]:
+            data.extend(load_data_split(data_path, sp))
 
         self.preprocessor = preprocessor
 
-        # setup image transforms:
-        self.transforms = []
+        # setup transforms:
+        self.transforms = [
+            torchaudio.transforms.MelSpectrogram(
+                sample_rate=SAMPLE_RATE, n_mels=preprocessor.img_height
+            ),
+            torchvision.transforms.Lambda(log_transform),
+            torchvision.transforms.Normalize(mean=[-5.532], std=[4.02]),
+        ]
         if augment:
             self.transforms.extend(
                 [
-                    RandomResizeCrop(),
-                    transforms.RandomRotation(2, fill=(255,)),
-                    transforms.ColorJitter(0.5, 0.5, 0.5, 0.5),
+                    torchaudio.transforms.FrequencyMasking(27, iid_masks=True),
+                    torchaudio.transforms.FrequencyMasking(27, iid_masks=True),
+                    torchaudio.transforms.TimeMasking(100, iid_masks=True),
+                    torchaudio.transforms.TimeMasking(100, iid_masks=True),
                 ]
             )
-        self.transforms.extend(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.912], std=[0.168]),
-            ]
-        )
-        self.transforms = transforms.Compose(self.transforms)
+        self.transforms = torchvision.transforms.Compose(self.transforms)
 
-        # Load each image:
-        images = []
-        text = []
-        for key, examples in forms.items():
-            for example in examples:
-                if example["key"] not in split_keys:
-                    continue
-                img_file = os.path.join(data_path, f"{key}.png")
-                images.append((img_file, example["box"], preprocessor.img_height))
-                text.append(example["text"])
-        with mp.Pool(processes=16) as pool:
-            images = pool.map(load_image, images)
-        self.dataset = list(zip(images, text))
+        # Load each audio file:
+        audio = [example["audio"] for example in data]
+        text = [example["text"] for example in data]
+        duration = [example["duration"] for example in data]
+        self.dataset = list(zip(audio, text, duration))
 
     def sample_sizes(self):
         """
         Returns a list of tuples containing the input size
-        (width, height) and the output length for each sample.
+        (time, 1) and the output length for each sample.
         """
-        return [(image.size, len(text)) for image, text in self.dataset]
+        return [((duration, 1), len(text)) for _, text, duration in self.dataset]
 
     def __getitem__(self, index):
-        img, text = self.dataset[index]
-        inputs = self.transforms(img)
+        audio_file, text, _ = self.dataset[index]
+        audio = torchaudio.load(audio_file)
+        inputs = self.transforms(audio[0])
         outputs = self.preprocessor.to_index(text)
         return inputs, outputs
 
@@ -84,42 +73,12 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.dataset)
 
 
-def load_image(example):
-    img_file, box, height = example
-    img = PIL.Image.open(img_file)
-    x, y, w, h = box
-    size = (height, int((height / h) * w))
-    return transforms.functional.resized_crop(img, y, x, h, w, size)
-
-
-class RandomResizeCrop:
-    def __init__(self, jitter=10, ratio=0.5):
-        self.jitter = jitter
-        self.ratio = ratio
-
-    def __call__(self, img):
-        w, h = img.size
-
-        # pad with white:
-        img = transforms.functional.pad(img, self.jitter, fill=255)
-
-        # crop at random (x, y):
-        x = self.jitter + random.randint(-self.jitter, self.jitter)
-        y = self.jitter + random.randint(-self.jitter, self.jitter)
-
-        # randomize aspect ratio:
-        size_w = w * random.uniform(1 - self.ratio, 1 + self.ratio)
-        size = (h, int(size_w))
-        img = transforms.functional.resized_crop(img, y, x, h, w, size)
-        return img
-
-
 class Preprocessor:
     """
-    A preprocessor for the IAMDB dataset.
+    A preprocessor for the Librispeech dataset.
     Args:
         data_path (str) : Path to the top level data directory.
-        img_heigh (int) : Height to resize extracted images.
+        img_height (int) : Number of audio features in transform.
         tokens_path (str) (optional) : The path to the list of model output
             tokens. If not provided the token set is built dynamically from
             the graphemes of the tokenized text. NB: This argument does not
@@ -140,15 +99,19 @@ class Preprocessor:
         use_words=False,
         prepend_wordsep=False,
     ):
-        forms = load_metadata(data_path, use_words=use_words)
-        self._use_words = use_words
+        if use_words:
+            raise ValueError("use_words not supported for Librispeech dataset")
         self._prepend_wordsep = prepend_wordsep
+        self.img_height = img_height
+
+        data = []
+        for sp in SPLITS["train"]:
+            data.extend(load_data_split(data_path, sp))
 
         # Load the set of graphemes:
         graphemes = set()
-        for _, form in forms.items():
-            for line in form:
-                graphemes.update(line["text"])
+        for ex in data:
+            graphemes.update(ex["text"])
         self.graphemes = sorted(graphemes)
 
         # Build the token-to-index and index-to-token maps:
@@ -169,15 +132,10 @@ class Preprocessor:
 
         self.graphemes_to_index = {t: i for i, t in enumerate(self.graphemes)}
         self.tokens_to_index = {t: i for i, t in enumerate(self.tokens)}
-        self.img_height = img_height
 
     @property
     def num_tokens(self):
         return len(self.tokens)
-
-    @property
-    def use_words(self):
-        return self._use_words
 
     def to_index(self, line):
         tok_to_idx = self.graphemes_to_index
@@ -189,7 +147,9 @@ class Preprocessor:
                     for w in line.split(WORDSEP)
                     for t in self.lexicon.get(w, WORDSEP + w)
                 ]
-                tok_to_idx = self.tokens_to_index
+            tok_to_idx = self.tokens_to_index
+        # In some cases we require the target to start with WORDSEP, for
+        # example when learning word piece decompositions.
         if self._prepend_wordsep:
             line = itertools.chain([WORDSEP], line)
         return torch.LongTensor([tok_to_idx[t] for t in line])
@@ -209,45 +169,23 @@ class Preprocessor:
         return "".join(indices).strip(WORDSEP)
 
 
-def load_metadata(data_path, use_words=False):
-    forms = collections.defaultdict(list)
-    filename = "words.txt" if use_words else "lines.txt"
-    with open(os.path.join(data_path, filename), "r") as fid:
-        lines = (l.strip().split() for l in fid if l[0] != "#")
-        for line in lines:
-            # skip word segmentation errors
-            if use_words and line[1] == "err":
-                continue
-            text = " ".join(line[8:])
-            # remove garbage tokens:
-            text = text.replace("#", "")
+def load_data_split(data_path, split):
+    json_file = os.path.join(data_path, f"{split}.json")
+    with open(json_file, "r") as fid:
+        examples = [json.loads(l) for l in fid]
+        for ex in examples:
+            text = ex["text"]
             # swap word sep from | to WORDSEP
-            text = re.sub(r"\|+|\s", WORDSEP, text).strip(WORDSEP)
-            form_key = "-".join(line[0].split("-")[:2])
-            line_key = "-".join(line[0].split("-")[:3])
-            box_idx = 4 - use_words
-            box = tuple(int(val) for val in line[box_idx : box_idx + 4])
-            forms[form_key].append(
-                {
-                    "key": line_key,
-                    "box": box,
-                    "text": text,
-                }
-            )
-    return forms
+            text = re.sub(r"\s", WORDSEP, text).strip(WORDSEP)
+            ex["text"] = text
+    return examples
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Compute data stats.")
-    parser.add_argument("--data_path", type=str, help="Path to dataset.")
-    parser.add_argument(
-        "--use_words",
-        default=False,
-        action="store_true",
-        help="Load word segmented dataset instead of lines.",
-    )
+    parser.add_argument("--data_path", type=str, help="Path to dataset JSON files.")
     parser.add_argument(
         "--save_text", type=str, help="Path to save parsed train text.", default=None
     )
@@ -262,11 +200,12 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    preprocessor = Preprocessor(args.data_path, 64, use_words=args.use_words)
+    preprocessor = Preprocessor(args.data_path, 80)
+    print(f"Number of tokens: {preprocessor.num_tokens}")
     trainset = Dataset(args.data_path, preprocessor, split="train", augment=False)
     if args.save_text is not None:
         with open(args.save_text, "w") as fid:
-            fid.write("\n".join(t for _, t in trainset.dataset))
+            fid.write("\n".join(t for _, t, _ in trainset.dataset))
     if args.save_tokens is not None:
         with open(args.save_tokens, "w") as fid:
             fid.write("\n".join(preprocessor.tokens))
@@ -283,13 +222,13 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # Compute mean and var stats:
-    images = torch.cat([trainset[i][0] for i in range(len(trainset))], dim=2)
-    mean = torch.mean(images)
-    std = torch.std(images)
+    audio = torch.cat([trainset[i][0] for i in range(len(trainset))], dim=2)
+    mean = torch.mean(audio)
+    std = torch.std(audio)
     print(f"Data mean {mean} and standard deviation {std}.")
 
-    # Compute average lengths of images and targets:
-    avg_im_w = sum(w for (w, _), _ in trainset.sample_sizes()) / len(trainset)
+    # Compute average lengths of audio and targets:
+    avg_in_t = sum(w for (w, _), _ in trainset.sample_sizes()) / len(trainset)
     avg_tgt_l = sum(l for _, l in trainset.sample_sizes()) / len(trainset)
-    print(f"Average image width {avg_im_w}")
+    print(f"Average audio length {avg_in_t} (s)")
     print(f"Average target length {avg_tgt_l}")

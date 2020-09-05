@@ -154,6 +154,7 @@ def train(world_rank, args):
         tokens_path=config["data"].get("tokens", None),
         lexicon_path=config["data"].get("lexicon", None),
         use_words=config["data"].get("use_words", False),
+        prepend_wordsep=config["data"].get("prepend_wordsep", False),
     )
     trainset = dataset.Dataset(data_path, preprocessor, split="train", augment=True)
     valset = dataset.Dataset(data_path, preprocessor, split="validation")

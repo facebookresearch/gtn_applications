@@ -65,6 +65,7 @@ def test(args):
         tokens_path=config["data"].get("tokens", None),
         lexicon_path=config["data"].get("lexicon", None),
         use_words=config["data"].get("use_words", False),
+        prepend_wordsep=config["data"].get("prepend_wordsep", False),
     )
     data = dataset.Dataset(data_path, preprocessor, split=args.split)
     loader = utils.data_loader(data, config)

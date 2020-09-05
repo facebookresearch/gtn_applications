@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import gtn
 from itertools import groupby
 import numpy as np
-import os 
+import os
 import torch
 import utils
 import transducer

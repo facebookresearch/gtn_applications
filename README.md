@@ -51,4 +51,8 @@ python train.py -h
 
 ## Contributing
 
-Use [Black](https://github.com/psf/black) tool for formatting the python code.
+Use [Black](https://github.com/psf/black) to format python code.
+
+```
+black <file>.py
+```
