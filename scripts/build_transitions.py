@@ -210,8 +210,6 @@ if __name__ == "__main__":
     graph = build_graph(pruned_ngrams, args.disable_backoff)
     print("Graph has {} arcs and {} nodes.".format(graph.num_arcs(), graph.num_nodes()))
 
-    if args.save_path is not None:
-        print(f"Saving graph to {args.save_path}")
-        with open(args.save_path, "w") as fid:
-            graph_str = graph.__repr__().strip()
-            fid.write(graph_str)
+    print(f"Saving graph to {args.save_path}")
+    gtn.save(args.save_path, graph)
+
