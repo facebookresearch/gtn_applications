@@ -154,7 +154,7 @@ class Preprocessor:
         # Build the token-to-index and index-to-token maps:
         if tokens_path is not None:
             with open(tokens_path, "r") as fid:
-                self.tokens = sorted([l.strip() for l in fid])
+                self.tokens = [l.strip() for l in fid]
         else:
             # Default to use graphemes if no tokens are provided
             self.tokens = self.graphemes
