@@ -111,11 +111,6 @@ def ngram_asg():
 
 
 if __name__ == "__main__":
-    if getattr(sys.flags, "nogil", False) and sys.flags.nogil:
-        print("Running without GIL")
-    else:
-        print("Running with GIL")
-    torch.set_num_threads(1)
     word_decompositions()
     ngram_ctc()
     ngram_asg()

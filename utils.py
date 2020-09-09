@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 import collections
 from dataclasses import dataclass
 import gtn
@@ -9,10 +8,6 @@ import struct
 import sys
 import time
 import torch
-
-
-def thread_init():
-    torch.set_num_threads(1)
 
 
 def data_loader(dataset, config, world_rank=0, world_size=1):
@@ -282,10 +277,8 @@ class CTCLossFunction(torch.autograd.Function):
             scales[b] = scale
             emissions_graphs[b] = g_emissions
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
+        gtn.parallel_for(process, range(B))
+
         ctx.auxiliary_data = (losses, scales, emissions_graphs, log_probs.shape)
         loss = torch.tensor([losses[b].item() * scales[b] for b in range(B)])
         return torch.mean(loss.cuda() if log_probs.is_cuda else loss)
@@ -302,10 +295,7 @@ class CTCLossFunction(torch.autograd.Function):
             grad = emissions.grad().weights_to_numpy()
             input_grad[b] = torch.from_numpy(grad).view(1, T, C) * scales[b]
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
+        gtn.parallel_for(process, range(B))
 
         if grad_output.is_cuda:
             input_grad = input_grad.cuda()
@@ -397,11 +387,8 @@ class ASGLossFunction(torch.autograd.Function):
             emissions_graphs[b] = g_emissions
             transitions_graphs[b] = g_transitions
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
-        executor.shutdown()
+        gtn.parallel_for(process, range(B))
+
         ctx.auxiliary_data = (
             losses,
             scales,
@@ -441,10 +428,7 @@ class ASGLossFunction(torch.autograd.Function):
                     torch.from_numpy(grad).view(1, C + 1, C) * scales[b]
                 )
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
+        gtn.parallel_for(process, range(B))
         if input_grad is not None:
             if grad_output.is_cuda:
                 input_grad = input_grad.cuda()

@@ -1,13 +1,8 @@
-from concurrent.futures import ThreadPoolExecutor
 import gtn
 import math
 import numpy as np
 import torch
 import itertools
-
-
-def thread_init():
-    torch.set_num_threads(1)
 
 
 def make_scalar_graph(weight):
@@ -204,6 +199,7 @@ class Transducer(torch.nn.Module):
 
         self.tokens.arc_sort()
 
+        paths = [None] * B
         def process(b):
             emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
@@ -223,12 +219,10 @@ class Transducer(torch.nn.Module):
             # the shortest:
             path = gtn.viterbi_path(path)
             path = gtn.remove(gtn.project_output(path))
-            return path.labels_to_list()
+            paths[b] = path.labels_to_list()
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        predictions = [torch.IntTensor(f.result()) for f in futures]
-        executor.shutdown()
+        gtn.parallel_for(process, range(B))
+        predictions = [torch.IntTensor(path) for path in paths]
         return predictions
 
 
@@ -291,11 +285,7 @@ class TransducerLossFunction(torch.autograd.Function):
             if emissions.calc_grad:
                 emissions_graphs[b] = emissions
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
-        executor.shutdown()
+        gtn.parallel_for(process, range(B))
 
         ctx.graphs = (losses, emissions_graphs, transitions)
         ctx.input_shape = inputs.shape
@@ -326,11 +316,7 @@ class TransducerLossFunction(torch.autograd.Function):
                 grad = emissions.grad().weights_to_numpy()
                 input_grad[b] = torch.tensor(grad).view(1, T, C)
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
-        executor.shutdown()
+        gtn.parallel_for(process, range(B))
 
         if calc_emissions:
             input_grad = input_grad.to(grad_output.device)
@@ -509,11 +495,7 @@ class ConvTransduce1DFunction(torch.autograd.Function):
                 if input_graph.calc_grad:
                     input_graphs[b].append(input_graph)
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
-        executor.shutdown()
+        gtn.parallel_for(process, range(B))
 
         global CTX_GRAPHS
         CTX_GRAPHS = (output_graphs, input_graphs, kernels)
@@ -548,11 +530,7 @@ class ConvTransduce1DFunction(torch.autograd.Function):
                 )
                 input_grad[b, t * stride : t * stride + kernel_size] += grad
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        for f in futures:
-            f.result()
-        executor.shutdown()
+        gtn.parallel_for(process, range(B))
 
         if ctx.needs_input_grad[4]:
             kernel_grads = [k.grad().weights_to_numpy() for k in kernels]

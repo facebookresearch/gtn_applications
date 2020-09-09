@@ -7,12 +7,6 @@ from utils import CTCLoss
 
 from time_utils import time_func
 
-if getattr(sys.flags, "nogil", False) and sys.flags.nogil:
-    print("Running without GIL")
-else:
-    print("Running with GIL")
-
-torch.set_num_threads(1)
 T = 250
 L = 44
 N = 80

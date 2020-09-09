@@ -8,7 +8,7 @@ A library for handwriting recognition with GTNs.
 
 2. `conda activate gtn_env # using the same environment from Step 1`
 
-3. `conda install -c nogil pytorch torchvision`
+3. `conda install pytorch torchvision -c pytorch`
 
 4. `pip install -r requirements.txt`
 
@@ -42,8 +42,6 @@ To run distributed training with multiple GPUs:
 python train.py --config configs/iamdb/tds2d.json --world_size <NUM_GPUS>
 ```
 
-Set the environment variable `PYTHONGIL=0` when using criterion implemented using GTNs. This gives better performance for multithreading. 
-
 For a list of options type:
 ```
 python train.py -h
@@ -52,6 +50,14 @@ python train.py -h
 ## Contributing
 
 Use [Black](https://github.com/psf/black) to format python code.
+
+First install:
+
+```
+pip install black
+```
+
+Then run with:
 
 ```
 black <file>.py

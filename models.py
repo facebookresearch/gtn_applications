@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 import gtn
 from itertools import groupby
 import numpy as np
@@ -363,8 +362,9 @@ class ASG(torch.nn.Module):
         B, T, C = outputs.shape
         assert C == self.N, "Wrong number of classes in output."
 
+        predictions = [None] * B
+
         def process(b):
-            prediction = []
             # create emission graph
             g_emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
@@ -383,13 +383,11 @@ class ASG(torch.nn.Module):
                 collapsed_prediction = [
                     p for p in collapsed_prediction if p != self.garbage_idx
                 ]
-            return utils.unpack_replabels(collapsed_prediction, self.num_replabels)
+            predictions[b] = utils.unpack_replabels(
+                collapsed_prediction, self.num_replabels)
 
-        executor = ThreadPoolExecutor(max_workers=B, initializer=utils.thread_init)
-        futures = [executor.submit(process, b) for b in range(B)]
-        predictions = [torch.IntTensor(f.result()) for f in futures]
-        executor.shutdown()
-        return predictions
+        gtn.parallel_for(process, range(B))
+        return [torch.IntTensor(p) for p in predictions]
 
 
 def load_model(model_type, input_size, output_size, config):

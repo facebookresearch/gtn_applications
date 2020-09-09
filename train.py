@@ -59,10 +59,6 @@ def parse_args():
         )
         sys.exit(1)
 
-    if getattr(sys.flags, "nogil", False) and sys.flags.nogil:
-        logging.info("Running without GIL")
-    else:
-        logging.info("Running with GIL")
     return args
 
 
