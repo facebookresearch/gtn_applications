@@ -61,7 +61,7 @@ class Dataset(torch.utils.data.Dataset):
                 if example["key"] not in split_keys:
                     continue
                 img_file = os.path.join(data_path, f"{key}.png")
-                images.append((img_file, example["box"], preprocessor.img_height))
+                images.append((img_file, example["box"], preprocessor.num_features))
                 text.append(example["text"])
         with mp.Pool(processes=16) as pool:
             images = pool.map(load_image, images)
@@ -134,7 +134,7 @@ class Preprocessor:
     def __init__(
         self,
         data_path,
-        img_height,
+        num_features,
         tokens_path=None,
         lexicon_path=None,
         use_words=False,
@@ -169,7 +169,7 @@ class Preprocessor:
 
         self.graphemes_to_index = {t: i for i, t in enumerate(self.graphemes)}
         self.tokens_to_index = {t: i for i, t in enumerate(self.tokens)}
-        self.img_height = img_height
+        self.num_features = num_features
 
     @property
     def num_tokens(self):

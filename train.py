@@ -142,11 +142,11 @@ def train(world_rank, args):
         raise ValueError(f"Unknown dataset {dataset}")
     dataset = getattr(datasets, dataset)
 
-    input_size = config["data"]["img_height"]
+    input_size = config["data"]["num_features"]
     data_path = config["data"]["data_path"]
     preprocessor = dataset.Preprocessor(
         data_path,
-        img_height=input_size,
+        num_features=input_size,
         tokens_path=config["data"].get("tokens", None),
         lexicon_path=config["data"].get("lexicon", None),
         use_words=config["data"].get("use_words", False),

@@ -28,7 +28,7 @@ data path used above:
   "data" : {
     "dataset" : "iamdb",
     "data_path" : "<path_to_data>",
-    "img_height" : 64
+    "num_features" : 64
   },
 ```
 

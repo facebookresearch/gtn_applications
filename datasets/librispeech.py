@@ -33,7 +33,7 @@ class Dataset(torch.utils.data.Dataset):
         # setup transforms:
         self.transforms = [
             torchaudio.transforms.MelSpectrogram(
-                sample_rate=SAMPLE_RATE, n_mels=preprocessor.img_height
+                sample_rate=SAMPLE_RATE, n_mels=preprocessor.num_features
             ),
             torchvision.transforms.Lambda(log_transform),
             torchvision.transforms.Normalize(mean=[-5.532], std=[4.02]),
@@ -78,7 +78,7 @@ class Preprocessor:
     A preprocessor for the Librispeech dataset.
     Args:
         data_path (str) : Path to the top level data directory.
-        img_height (int) : Number of audio features in transform.
+        num_features (int) : Number of audio features in transform.
         tokens_path (str) (optional) : The path to the list of model output
             tokens. If not provided the token set is built dynamically from
             the graphemes of the tokenized text. NB: This argument does not
@@ -93,7 +93,7 @@ class Preprocessor:
     def __init__(
         self,
         data_path,
-        img_height,
+        num_features,
         tokens_path=None,
         lexicon_path=None,
         use_words=False,
@@ -102,7 +102,7 @@ class Preprocessor:
         if use_words:
             raise ValueError("use_words not supported for Librispeech dataset")
         self._prepend_wordsep = prepend_wordsep
-        self.img_height = img_height
+        self.num_features = num_features
 
         data = []
         for sp in SPLITS["train"]:

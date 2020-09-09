@@ -3,7 +3,7 @@
   "data" : {
     "dataset" : "librispeech",
     "data_path" : "/checkpoint/awni/data/librispeech/",
-    "img_height" : 80,
+    "num_features" : 80,
     "tokens" : "/checkpoint/awni/data/librispeech/word_pieces_tokens_1000.txt",
     "prepend_wordsep" : true
   },

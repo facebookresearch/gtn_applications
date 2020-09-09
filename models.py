@@ -159,11 +159,11 @@ class TDS2dTransducer(torch.nn.Module):
 
 
 class TDSBlock(torch.nn.Module):
-    def __init__(self, in_channels, img_height, kernel_size, dropout):
+    def __init__(self, in_channels, num_features, kernel_size, dropout):
         super(TDSBlock, self).__init__()
         self.in_channels = in_channels
-        self.img_height = img_height
-        fc_size = in_channels * img_height
+        self.num_features = num_features
+        fc_size = in_channels * num_features
         self.conv = torch.nn.Sequential(
             torch.nn.Conv2d(
                 in_channels=in_channels,
@@ -191,7 +191,7 @@ class TDSBlock(torch.nn.Module):
     def forward(self, inputs):
         # inputs shape: [B, C * H, W]
         B, CH, W = inputs.shape
-        C, H = self.in_channels, self.img_height
+        C, H = self.in_channels, self.num_features
         outputs = self.conv(inputs.view(B, C, H, W)).view(B, CH, W) + inputs
         outputs = self.instance_norms[0](outputs)
 
