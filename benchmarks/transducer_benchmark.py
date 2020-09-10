@@ -9,7 +9,7 @@ from time_utils import time_func
 
 
 def word_decompositions():
-    tokens_path = "/checkpoint/awni/data/iamdb/word_pieces_tokens_1000.txt"
+    tokens_path = "word_pieces_tokens_1000.txt"
     with open(tokens_path, "r") as fid:
         tokens = sorted([l.strip() for l in fid])
     graphemes = sorted(set(c for t in tokens for c in t))
@@ -22,7 +22,9 @@ def word_decompositions():
     if len(sys.argv) > 1:
         B = int(sys.argv[1])
 
-    inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True).cuda()
+    inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
+    if torch.cuda.is_available():
+        inputs = inputs.cuda()
 
     targets = []
     for b in range(B):
