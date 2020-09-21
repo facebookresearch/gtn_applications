@@ -71,7 +71,9 @@ def test(args):
     loader = utils.data_loader(data, config)
 
     criterion, output_size = models.load_criterion(
-        config.get("criterion_type", "ctc"), preprocessor, config.get("criterion", {}),
+        config.get("criterion_type", "ctc"),
+        preprocessor,
+        config.get("criterion", {}),
     )
     criterion = criterion.to(device)
     model = models.load_model(
@@ -88,15 +90,25 @@ def test(args):
         predictions = criterion.viterbi(outputs)
         for p, t in zip(predictions, targets):
             p, t = preprocessor.tokens_to_text(p), preprocessor.to_text(t)
-            dist = editdistance.eval(p, t)
-            print("CER: {:.3f}".format(dist / len(t) if len(t) > 0 else 0))
+            pw, tw = p.split(preprocessor.wordsep), t.split(preprocessor.wordsep)
+            pw, tw = list(filter(None, pw)), list(filter(None, tw))
+            tokens_dist = editdistance.eval(p, t)
+            words_dist = editdistance.eval(pw, tw)
+            print("CER: {:.3f}".format(tokens_dist * 100.0 / len(t) if len(t) > 0 else 0))
+            print("WER: {:.3f}".format(words_dist * 100.0 / len(tw) if len(tw) > 0 else 0))
             print("HYP:", "".join(p))
             print("REF", "".join(t))
             print("=" * 80)
-            meters.edit_distance += dist
+            meters.edit_distance_tokens += tokens_dist
+            meters.edit_distance_words += words_dist
             meters.num_tokens += len(t)
+            meters.num_words += len(tw)
 
-    logging.info("Loss {:.3f}, CER {:.3f}, ".format(meters.avg_loss, meters.cer))
+    logging.info(
+        "Loss {:.3f}, CER {:.3f}, WER {:.3f}, ".format(
+            meters.avg_loss, meters.cer, meters.wer
+        )
+    )
 
 
 def main():

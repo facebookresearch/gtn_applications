@@ -15,12 +15,12 @@ SPLITS = {
     "test": ["validationset2", "testset"],
 }
 
-WORDSEP = "▁"
-
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_path, preprocessor, split, augment=False):
-        forms = load_metadata(data_path, use_words=preprocessor.use_words)
+        forms = load_metadata(
+            data_path, preprocessor.wordsep, use_words=preprocessor.use_words
+        )
 
         # Get split keys:
         splits = SPLITS.get(split, None)
@@ -140,9 +140,11 @@ class Preprocessor:
         use_words=False,
         prepend_wordsep=False,
     ):
-        forms = load_metadata(data_path, use_words=use_words)
+        self.wordsep = "▁"
         self._use_words = use_words
         self._prepend_wordsep = prepend_wordsep
+
+        forms = load_metadata(data_path, self.wordsep, use_words=use_words)
 
         # Load the set of graphemes:
         graphemes = set()
@@ -186,12 +188,12 @@ class Preprocessor:
                 # If the word is not found in the lexicon, fall back to letters.
                 line = [
                     t
-                    for w in line.split(WORDSEP)
-                    for t in self.lexicon.get(w, WORDSEP + w)
+                    for w in line.split(self.wordsep)
+                    for t in self.lexicon.get(w, self.wordsep + w)
                 ]
                 tok_to_idx = self.tokens_to_index
         if self._prepend_wordsep:
-            line = itertools.chain([WORDSEP], line)
+            line = itertools.chain([self.wordsep], line)
         return torch.LongTensor([tok_to_idx[t] for t in line])
 
     def to_text(self, indices):
@@ -206,10 +208,10 @@ class Preprocessor:
 
     def _post_process(self, indices):
         # ignore preceding and trailling spaces
-        return "".join(indices).strip(WORDSEP)
+        return "".join(indices).strip(self.wordsep)
 
 
-def load_metadata(data_path, use_words=False):
+def load_metadata(data_path, wordsep, use_words=False):
     forms = collections.defaultdict(list)
     filename = "words.txt" if use_words else "lines.txt"
     with open(os.path.join(data_path, filename), "r") as fid:
@@ -221,8 +223,8 @@ def load_metadata(data_path, use_words=False):
             text = " ".join(line[8:])
             # remove garbage tokens:
             text = text.replace("#", "")
-            # swap word sep from | to WORDSEP
-            text = re.sub(r"\|+|\s", WORDSEP, text).strip(WORDSEP)
+            # swap word sep from | to wordsep
+            text = re.sub(r"\|+|\s", wordsep, text).strip(wordsep)
             form_key = "-".join(line[0].split("-")[:2])
             line_key = "-".join(line[0].split("-")[:3])
             box_idx = 4 - use_words

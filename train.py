@@ -21,7 +21,9 @@ def parse_args():
         "--config", type=str, help="A json configuration file for experiment."
     )
     parser.add_argument("--disable_cuda", action="store_true", help="Disable CUDA")
-    parser.add_argument("--restore", action="store_true", help="Restore training from last checkpoint")
+    parser.add_argument(
+        "--restore", action="store_true", help="Restore training from last checkpoint"
+    )
     parser.add_argument(
         "--checkpoint_path",
         default="/tmp/",
@@ -63,13 +65,19 @@ def parse_args():
 
 
 def compute_edit_distance(predictions, targets, preprocessor):
-    dist = 0
+    tokens_dist = 0
+    words_dist = 0
     n_tokens = 0
+    n_words = 0
     for p, t in zip(predictions, targets):
         p, t = preprocessor.tokens_to_text(p), preprocessor.to_text(t)
-        dist += editdistance.eval(p, t)
+        pw, tw = p.split(preprocessor.wordsep), t.split(preprocessor.wordsep)
+        pw, tw = list(filter(None, pw)), list(filter(None, tw))
+        tokens_dist += editdistance.eval(p, t)
+        words_dist += editdistance.eval(pw, tw)
         n_tokens += len(t)
-    return dist, n_tokens
+        n_words += len(tw)
+    return tokens_dist, words_dist, n_tokens, n_words
 
 
 @torch.no_grad()
@@ -81,14 +89,16 @@ def test(model, criterion, data_loader, preprocessor, device, world_size):
         outputs = model(inputs.to(device))
         meters.loss += criterion(outputs, targets).item() * len(targets)
         meters.num_samples += len(targets)
-        dist, toks = compute_edit_distance(
+        tokens_dist, words_dist, n_tokens, n_words = compute_edit_distance(
             criterion.viterbi(outputs), targets, preprocessor
         )
-        meters.edit_distance += dist
-        meters.num_tokens += toks
+        meters.edit_distance_tokens += tokens_dist
+        meters.num_tokens += n_tokens
+        meters.edit_distance_words += words_dist
+        meters.num_words += n_words
     if world_size > 1:
         meters.sync()
-    return meters.avg_loss, meters.cer
+    return meters.avg_loss, meters.cer, meters.wer
 
 
 def checkpoint(model, criterion, checkpoint_path, save_best=False):
@@ -160,7 +170,9 @@ def train(world_rank, args):
     # setup criterion, model:
     logging.info("Loading model ...")
     criterion, output_size = models.load_criterion(
-        config.get("criterion_type", "ctc"), preprocessor, config.get("criterion", {}),
+        config.get("criterion_type", "ctc"),
+        preprocessor,
+        config.get("criterion", {}),
     )
     criterion = criterion.to(device)
     model = models.load_model(
@@ -195,12 +207,12 @@ def train(world_rank, args):
 
     # run training:
     logging.info("Starting training ...")
-    params = [{ "params" : model.parameters()}]
+    params = [{"params": model.parameters()}]
     if len(list(criterion.parameters())) > 0:
-        crit_params = { "params" : criterion.parameters()}
+        crit_params = {"params": criterion.parameters()}
         crit_lr = config["optim"].get("crit_learning_rate", None)
         if crit_lr is not None:
-            crit_params['lr'] = crit_lr
+            crit_params["lr"] = crit_lr
         params.append(crit_params)
 
     optimizer = torch.optim.SGD(params, lr=lr)
@@ -210,6 +222,7 @@ def train(world_rank, args):
 
     min_val_loss = float("inf")
     min_val_cer = float("inf")
+    min_val_wer = float("inf")
 
     Timer = utils.CudaTimer if device.type == "cuda" else utils.Timer
     timers = Timer(
@@ -252,11 +265,13 @@ def train(world_rank, args):
             timers.stop("optim").start("metrics")
             meters.loss += loss.item() * len(targets)
             meters.num_samples += len(targets)
-            dist, toks = compute_edit_distance(
+            tokens_dist, words_dist, n_tokens, n_words = compute_edit_distance(
                 base_criterion.viterbi(outputs), targets, preprocessor
             )
-            meters.edit_distance += dist
-            meters.num_tokens += toks
+            meters.edit_distance_tokens += tokens_dist
+            meters.num_tokens += n_tokens
+            meters.edit_distance_words += words_dist
+            meters.num_words += n_words
             timers.stop("metrics").start("ds_fetch")
         timers.stop("ds_fetch").stop("train_total")
         epoch_time = time.time() - start_time
@@ -264,13 +279,18 @@ def train(world_rank, args):
             meters.sync()
         logging.info(
             "Epoch {} complete. "
-            "nUpdates {}, Loss {:.3f}, CER {:.3f}, Time {:.3f} (s)".format(
-                epoch + 1, num_updates, meters.avg_loss, meters.cer, epoch_time
+            "nUpdates {}, Loss {:.3f}, CER {:.3f}, WER {:.3f}, Time {:.3f} (s)".format(
+                epoch + 1,
+                num_updates,
+                meters.avg_loss,
+                meters.cer,
+                meters.wer,
+                epoch_time,
             ),
         )
         logging.info("Evaluating validation set..")
         timers.start("test_total")
-        val_loss, val_cer = test(
+        val_loss, val_cer, val_wer = test(
             model, base_criterion, val_loader, preprocessor, device, args.world_size
         )
         timers.stop("test_total")
@@ -284,10 +304,11 @@ def train(world_rank, args):
 
             min_val_loss = min(val_loss, min_val_loss)
             min_val_cer = min(val_cer, min_val_cer)
+            min_val_wer = min(val_wer, min_val_wer)
         logging.info(
-            "Validation Set: Loss {:.3f}, CER {:.3f}, "
-            "Best Loss {:.3f}, Best CER {:.3f}".format(
-                val_loss, val_cer, min_val_loss, min_val_cer
+            "Validation Set: Loss {:.3f}, CER {:.3f}, WER {:.3f}, "
+            "Best Loss {:.3f}, Best CER {:.3f}, Best WER {:.3f}".format(
+                val_loss, val_cer, val_wer, min_val_loss, min_val_cer, min_val_wer
             ),
         )
         logging.info(

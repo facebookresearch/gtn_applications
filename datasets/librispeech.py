@@ -14,7 +14,6 @@ SPLITS = {
     "test": ["test-clean", "test-other"],
 }
 
-WORDSEP = "▁"
 SAMPLE_RATE = 16000
 
 
@@ -26,7 +25,7 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(self, data_path, preprocessor, split, augment=False):
         data = []
         for sp in SPLITS[split]:
-            data.extend(load_data_split(data_path, sp))
+            data.extend(load_data_split(data_path, sp, preprocessor.wordsep))
 
         self.preprocessor = preprocessor
 
@@ -101,12 +100,13 @@ class Preprocessor:
     ):
         if use_words:
             raise ValueError("use_words not supported for Librispeech dataset")
+        self.wordsep = "▁"
         self._prepend_wordsep = prepend_wordsep
         self.num_features = num_features
 
         data = []
         for sp in SPLITS["train"]:
-            data.extend(load_data_split(data_path, sp))
+            data.extend(load_data_split(data_path, sp, self.wordsep))
 
         # Load the set of graphemes:
         graphemes = set()
@@ -144,14 +144,14 @@ class Preprocessor:
                 # If the word is not found in the lexicon, fall back to letters.
                 line = [
                     t
-                    for w in line.split(WORDSEP)
-                    for t in self.lexicon.get(w, WORDSEP + w)
+                    for w in line.split(self.wordsep)
+                    for t in self.lexicon.get(w, self.wordsep + w)
                 ]
             tok_to_idx = self.tokens_to_index
-        # In some cases we require the target to start with WORDSEP, for
+        # In some cases we require the target to start with self.wordsep, for
         # example when learning word piece decompositions.
         if self._prepend_wordsep:
-            line = itertools.chain([WORDSEP], line)
+            line = itertools.chain([self.wordsep], line)
         return torch.LongTensor([tok_to_idx[t] for t in line])
 
     def to_text(self, indices):
@@ -166,17 +166,17 @@ class Preprocessor:
 
     def _post_process(self, indices):
         # ignore preceding and trailling spaces
-        return "".join(indices).strip(WORDSEP)
+        return "".join(indices).strip(self.wordsep)
 
 
-def load_data_split(data_path, split):
+def load_data_split(data_path, split, wordsep):
     json_file = os.path.join(data_path, f"{split}.json")
     with open(json_file, "r") as fid:
         examples = [json.loads(l) for l in fid]
         for ex in examples:
             text = ex["text"]
-            # swap word sep from | to WORDSEP
-            text = re.sub(r"\s", WORDSEP, text).strip(WORDSEP)
+            # swap word sep from | to self.wordsep
+            text = re.sub(r"\s", wordsep, text).strip(wordsep)
             ex["text"] = text
     return examples
 

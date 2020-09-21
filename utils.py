@@ -82,10 +82,12 @@ class Meters:
     loss = 0.0
     num_samples = 0
     num_tokens = 0
-    edit_distance = 0
+    edit_distance_tokens = 0
+    num_words = 0
+    edit_distance_words = 0
 
     def sync(self):
-        lst = [self.loss, self.num_samples, self.num_tokens, self.edit_distance]
+        lst = [self.loss, self.num_samples, self.num_tokens, self.edit_distance_tokens, self.num_words, self.edit_distance_words]
         # TODO: avoid this so that distributed cpu training also works
         lst_tensor = torch.FloatTensor(lst).cuda()
         torch.distributed.all_reduce(lst_tensor)
@@ -93,16 +95,22 @@ class Meters:
             self.loss,
             self.num_samples,
             self.num_tokens,
-            self.edit_distance,
+            self.edit_distance_tokens,
+            self.num_words,
+            self.edit_distance_words
         ) = lst_tensor.tolist()
 
     @property
     def avg_loss(self):
-        return self.loss / self.num_samples
+        return self.loss / self.num_samples if self.num_samples > 0 else 0
 
     @property
     def cer(self):
-        return self.edit_distance / self.num_tokens
+        return self.edit_distance_tokens * 100.0 / self.num_tokens if self.num_tokens > 0 else 0
+    
+    @property
+    def wer(self):
+        return self.edit_distance_words * 100.0 / self.num_words if self.num_words > 0 else 0
 
 
 # A simple timer class inspired from `tnt.TimeMeter`
