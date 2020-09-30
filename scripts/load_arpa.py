@@ -67,7 +67,7 @@ def build_lm_graph(ngram_counts, vocab):
 
     for counts in ngram_counts:
         for ngram in counts.keys():
-            istate, ostate = ngram[0:-1], ngram[len(ngram) - lm_order + 1 :]
+            istate, ostate = ngram[0:-1], ngram[1 - lm_order:]
             inode = get_node(istate)
             onode = get_node(ostate)
             prob, bckoff = counts[ngram]
