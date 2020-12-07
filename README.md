@@ -1,6 +1,10 @@
-# rightrec
+# gtn_applications
 
-A library for handwriting recognition with GTNs.
+An applications library using [GTN][https://github.com/facebookresearch/gtn].
+Current examples include:
+
+- Offline handwriting recognition
+- Automatic speech recognition
 
 ## Installing
 
