@@ -1,6 +1,6 @@
 # gtn_applications
 
-An applications library using [GTN][https://github.com/facebookresearch/gtn].
+An applications library using [GTN](https://github.com/facebookresearch/gtn).
 Current examples include:
 
 - Offline handwriting recognition
