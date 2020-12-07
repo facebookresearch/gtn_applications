@@ -66,3 +66,6 @@ Then run with:
 ```
 black <file>.py
 ```
+### License
+
+GTN is licensed under a MIT license. See [LICENSE](LICENSE).
