@@ -1,7 +1,6 @@
 import argparse
 import editdistance
 import json
-import logging
 import os
 import torch
 
@@ -38,7 +37,6 @@ def parse_args():
         help="Data split to test on (default: 'validation')",
     )
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO)
     return args
 
 
@@ -104,7 +102,7 @@ def test(args):
             meters.num_tokens += len(t)
             meters.num_words += len(tw)
 
-    logging.info(
+    print(
         "Loss {:.3f}, CER {:.3f}, WER {:.3f}, ".format(
             meters.avg_loss, meters.cer, meters.wer
         )

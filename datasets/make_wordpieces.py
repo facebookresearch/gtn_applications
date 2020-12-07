@@ -6,16 +6,19 @@ import sentencepiece as spm
 
 def iamdb_pieces(args):
     import iamdb
-
     forms = iamdb.load_metadata(args.data_dir)
-    with open(os.path.join(args.data_dir, "trainset.txt"), "r") as fid:
-        train = [l.strip() for l in fid]
+    ds_keys = set()
+    for _, v in iamdb.SPLITS.items():
+        for ds in v:
+            with open(os.path.join(args.data_dir, f"{ds}.txt"), "r") as fid:
+                ds_keys.update(l.strip() for l in fid)
 
     # Train sentencepiece model only on the training set
-    text = [l for _, lines in forms.items() for l in lines if l["key"] in train]
+    text = [l["text"] for _, lines in forms.items()
+        for l in lines if l["key"] not in ds_keys]
     num_pieces = args.num_pieces
     sp = train_spm_model(
-        iter(train_text),
+        iter(text),
         num_pieces + 1,  # to account for <unk>
         user_symbols=["/"],  # added so token is in the output set
     )
@@ -24,19 +27,41 @@ def iamdb_pieces(args):
 
 
 def librispeech_pieces(args):
-    import librispeech
-
     # Train sentencepiece model only on the training set
-    text = []
-    for subset in librispeech.SPLITS["train"]:
-        ds = librispeech.load_data_split(args.data_dir, subset)
-        text.extend(l["text"] for l in ds)
+    import librispeech
+    json_set_pieces(args, librispeech)
+
+
+def wsj_pieces(args):
+    import wsj
+    # Load the 20k open vocabulary:
+    # Expects the original 20k vocab to be copied from
+    # "csr_2_comp/13-34.1/wsj1/doc/lng_modl/vocab/wlist20o.nvp"
+    # to "<data_dir>/vocab20ko.txt"
+    vocab_file = os.path.join(args.data_dir, "vocab20ko.txt")
+    with open(vocab_file, 'r') as fid:
+        vocab = [l.strip().lower() for l in fid if l[0] != "#"]
+    json_set_pieces(args, wsj, vocab)
+
+
+def json_set_pieces(args, dataset, vocab=None):
+    # Train sentencepiece model only on the training set
+    train_text = []
+    for subset in dataset.SPLITS["train"]:
+        ds = dataset.load_data_split(args.data_dir, subset)
+        train_text.extend(l["text"] for l in ds)
+    if args.text_file is not None:
+        with open(args.text_file, "r") as fid:
+            spm_text = [l.strip() for l in fid]
+    else:
+        spm_text = train_text
     num_pieces = args.num_pieces
     sp = train_spm_model(
-        iter(text),
+        iter(spm_text),
         num_pieces + 1,  # to account for <unk>
     )
-    vocab = sorted(set(w for t in text for w in t.split("▁") if w))
+    if vocab is None:
+        vocab = sorted(set(w for t in train_text for w in t.split("▁") if w))
     save_pieces(sp, num_pieces, args.output_prefix, vocab)
 
 
@@ -79,13 +104,19 @@ if __name__ == "__main__":
         default="iamdb",
         type=str,
         help="Name of the dataset.",
-        choices=["iamdb", "librispeech"],
+        choices=["iamdb", "librispeech", "wsj"],
     )
     parser.add_argument(
         "--data_dir",
         default="/datasets01/iamdb/060820/",
         type=str,
         help="Path to the dataset.",
+    )
+    parser.add_argument(
+        "--text_file",
+        default=None,
+        type=str,
+        help="Path to sentence piece training text",
     )
     parser.add_argument(
         "--output_prefix",

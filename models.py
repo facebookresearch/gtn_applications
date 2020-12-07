@@ -217,7 +217,7 @@ class TDS(torch.nn.Module):
                         out_channels=out_channels,
                         kernel_size=kernel_size,
                         padding=kernel_size // 2,
-                        stride=2,
+                        stride=tds_group.get("stride", 2),
                     ),
                     torch.nn.ReLU(),
                     torch.nn.Dropout(dropout),

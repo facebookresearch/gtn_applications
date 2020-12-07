@@ -22,8 +22,8 @@ def parse_args():
     )
     parser.add_argument("--disable_cuda", action="store_true", help="Disable CUDA")
     parser.add_argument(
-        "--restore", action="store_true", help="Restore training from last checkpoint"
-    )
+        "--restore", action="store_true", help="Restore training from last checkpoint")
+    parser.add_argument("--last_epoch", type=int, default=0, help="Epoch restoring from.")
     parser.add_argument(
         "--checkpoint_path",
         default="/tmp/",
@@ -52,6 +52,7 @@ def parse_args():
         sys.exit(1)
 
     logging.info("World size is : " + str(args.world_size))
+    logging.info(f"Restoring model from epoch {args.last_epoch}")
 
     if not use_cpu and torch.cuda.device_count() < args.world_size:
         logging.fatal(
@@ -207,19 +208,22 @@ def train(world_rank, args):
 
     # run training:
     logging.info("Starting training ...")
-    params = [{"params": model.parameters()}]
+    scale = 0.5 ** (args.last_epoch // step_size)
+    params = [{"params" : model.parameters(),
+               "initial_lr" : lr * scale,
+               "lr" : lr * scale}]
     if len(list(criterion.parameters())) > 0:
-        crit_params = {"params": criterion.parameters()}
-        crit_lr = config["optim"].get("crit_learning_rate", None)
-        if crit_lr is not None:
-            crit_params["lr"] = crit_lr
+        crit_params = {"params" : criterion.parameters()}
+        crit_lr = config["optim"].get("crit_learning_rate", lr)
+        crit_params['lr'] = crit_lr * scale
+        crit_params['initial_lr'] = crit_lr * scale
         params.append(crit_params)
 
-    optimizer = torch.optim.SGD(params, lr=lr)
+    optimizer = torch.optim.SGD(params)
     scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=step_size, gamma=0.5
+        optimizer, step_size=step_size, gamma=0.5,
+        last_epoch=args.last_epoch,
     )
-
     min_val_loss = float("inf")
     min_val_cer = float("inf")
     min_val_wer = float("inf")
@@ -238,7 +242,7 @@ def train(world_rank, args):
         ]
     )
     num_updates = 0
-    for epoch in range(epochs):
+    for epoch in range(args.last_epoch, epochs):
         logging.info("Epoch {} started. ".format(epoch + 1))
         model.train()
         criterion.train()
@@ -279,13 +283,15 @@ def train(world_rank, args):
             meters.sync()
         logging.info(
             "Epoch {} complete. "
-            "nUpdates {}, Loss {:.3f}, CER {:.3f}, WER {:.3f}, Time {:.3f} (s)".format(
+            "nUpdates {}, Loss {:.3f}, CER {:.3f}, WER {:.3f},"
+            " Time {:.3f} (s), LR {:.3f}".format(
                 epoch + 1,
                 num_updates,
                 meters.avg_loss,
                 meters.cer,
                 meters.wer,
                 epoch_time,
+                scheduler.get_last_lr()[0],
             ),
         )
         logging.info("Evaluating validation set..")
