@@ -1,4 +1,9 @@
 #!/bin/bash
+
+# Copyright (c) Facebook, Inc. and its affiliates. This source code is
+# licensed under the MIT license found in the LICENSE file in the root
+# directory of this source tree.
+
 # Register to download the data: http://www.fki.inf.unibe.ch/DBs/iamDB/iLogin/index.php
 # Supply credentials below:
 datadir=$1
