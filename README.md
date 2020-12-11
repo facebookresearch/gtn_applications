@@ -21,9 +21,9 @@ Current examples include:
 We give an example of how to trian on the [IAM off-line handwriting recognition](http://www.fki.inf.unibe.ch/databases/iam-handwriting-database)
 benchmark.
 
-First download the dataset:
+First register [here](https://fki.tic.heia-fr.ch/login) and download the dataset:
 ```
-./datasets/download_iamdb.sh <path_to_data>
+./datasets/download/iamdb.sh <path_to_data> <email> <password>
 ```
 
 Then update the configuration JSON `configs/iamdb/tds2d.json` to point to the
