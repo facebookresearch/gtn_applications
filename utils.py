@@ -8,6 +8,7 @@ LICENSE file in the root directory of this source tree.
 import collections
 from dataclasses import dataclass
 import gtn
+import importlib
 import logging
 import numpy as np
 import os
@@ -15,7 +16,6 @@ import struct
 import sys
 import time
 import torch
-
 
 def data_loader(dataset, config, world_rank=0, world_size=1):
     num_samples = config["data"].get("num_samples", None)
@@ -31,6 +31,12 @@ def data_loader(dataset, config, world_rank=0, world_size=1):
         num_workers=int(world_size > 1),
     )
 
+def module_from_file(module_name, file_path):
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sys.modules[module_name] = module
+    return module
 
 class Subset(torch.utils.data.Subset):
     def __init__(self, dataset, indices):

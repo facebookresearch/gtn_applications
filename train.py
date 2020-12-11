@@ -15,7 +15,6 @@ import sys
 import time
 import torch
 
-import datasets
 import models
 import utils
 
@@ -156,9 +155,9 @@ def train(world_rank, args):
     # setup data loaders:
     logging.info("Loading dataset ...")
     dataset = config["data"]["dataset"]
-    if not (hasattr(datasets, dataset)):
+    if not os.path.exists(f"datasets/{dataset}.py"):
         raise ValueError(f"Unknown dataset {dataset}")
-    dataset = getattr(datasets, dataset)
+    dataset = utils.module_from_file("dataset", f"datasets/{dataset}.py")
 
     input_size = config["data"]["num_features"]
     data_path = config["data"]["data_path"]
