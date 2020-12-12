@@ -4,7 +4,7 @@
         "dataset": "iamdb",
         "data_path": "<path_to_dataset>",
         "img_height": 64,
-        "tokens": "/checkpoint/awni/data/iamdb/graphemes.txt"
+        "tokens": "<replace_me>/letters.txt"
     },
     "criterion_type": "transducer",
     "criterion": {

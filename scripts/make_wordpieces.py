@@ -9,11 +9,16 @@ import argparse
 import io
 import os
 import sentencepiece as spm
+import sys 
+
+root_dir = os.path.dirname(os.path.abspath(__file__)) + '/..'
+sys.path.append(root_dir)
+from utils import module_from_file
 
 
 def iamdb_pieces(args):
-    import iamdb
-    forms = iamdb.load_metadata(args.data_dir)
+    iamdb = module_from_file("iamdb", os.path.join(root_dir, "datasets/iamdb.py"))
+    forms = iamdb.load_metadata(args.data_dir, "▁")
     ds_keys = set()
     for _, v in iamdb.SPLITS.items():
         for ds in v:
@@ -30,17 +35,18 @@ def iamdb_pieces(args):
         user_symbols=["/"],  # added so token is in the output set
     )
     vocab = sorted(set(w for t in text for w in t.split("▁") if w))
+    assert 'MOVE' in vocab
     save_pieces(sp, num_pieces, args.output_prefix, vocab)
 
 
 def librispeech_pieces(args):
     # Train sentencepiece model only on the training set
-    import librispeech
+    librispeech = module_from_file("librispeech", os.path.join(root_dir, "datasets/librispeech.py"))
     json_set_pieces(args, librispeech)
 
 
 def wsj_pieces(args):
-    import wsj
+    wsj = module_from_file("wsj", os.path.join(root_dir, "datasets/wsj.py"))
     # Load the 20k open vocabulary:
     # Expects the original 20k vocab to be copied from
     # "csr_2_comp/13-34.1/wsj1/doc/lng_modl/vocab/wlist20o.nvp"
