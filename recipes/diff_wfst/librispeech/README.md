@@ -4,11 +4,13 @@
 export ROOT=<path_to_repo>
 ```
 
-Prepare the WSJ dataset:
+Prepare the LibriSpeech dataset:
 
 ```
+cd $ROOT/datasets/download
+sh librispeech.sj <path_to_data>
 cd $ROOT/datasets
-python preprocess_wsj.py --data_path <path_to_wsj> --save_path <path_to_save_jsons> --convert
+python preprocess_librispeech.py --data_path <path_to_data> --save_path <path_to_save_jsons>
 ```
 
 Make the word piece token and lexicons sets:
@@ -17,7 +19,7 @@ cd $ROOT/scripts
 for np in 200 500 1000 1500
 do
   python make_wordpieces.py \
-    --dataset wsj \
+    --dataset librispeech \
     --data_dir <path_to_save_jsons> \
     --output_prefix <path_to_save_word_pieces>/word_pieces \
     --num_pieces $np
@@ -26,8 +28,8 @@ done
 
 ## Marginalized decompositions
 
-Edit the following JSON files to use the correct path to the WSJ dataset JSON
-files and word piece token and lexicon files.
+Edit the following JSON files to use the correct path to the LibriSpeech
+dataset JSON files and word piece token and lexicon files.
 
 | # Tokens | No Marginalization | Marginalized Decompositions |
 | ----------- | ----------- | ----------- |

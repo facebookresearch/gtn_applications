@@ -1,0 +1,29 @@
+{
+    "seed": 0,
+    "data": {
+        "dataset": "librispeech",
+        "data_path": "[<path_to_data>]",
+        "num_features": 80,
+        "tokens": "[<path_to_word_pieces>]/word_pieces_tokens_200.txt",
+        "prepend_wordsep": true,
+    },
+    "criterion_type": "transducer",
+    "criterion": {"blank": "optional", "allow_repeats": false},
+    "model_type": "tds",
+    "model": {
+        "tds_groups": [
+            {"channels": 4, "num_blocks": 5},
+            {"channels": 8, "num_blocks": 5},
+            {"channels": 16, "num_blocks": 5},
+        ],
+        "kernel_size": 5,
+        "dropout": 0.1,
+    },
+    "optim": {
+        "batch_size": 32,
+        "epochs": 400,
+        "learning_rate": 0.8,
+        "step_size": 100,
+        "max_grad_norm": 5,
+    },
+}
