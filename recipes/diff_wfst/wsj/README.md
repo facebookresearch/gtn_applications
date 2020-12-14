@@ -29,7 +29,7 @@ done
 Edit the following JSON files to use the correct path to the word piece token and lexicon files.
 
 | # Tokens | No Marginilization | Marginalized Decompositions |
-| ----------- | ----------- | ----------- | ----------- |
+| ----------- | ----------- | ----------- |
 | 200      | [200wp_no_decomps.json](200wp_no_decomps.json)   | [200wp_marginalized_decomps.json](200wp_marginalized_decomps.json)   | 
 | 500      | [500wp_no_decomps.json](500wp_no_decomps.json)   | [500wp_marginalized_decomps.json](500wp_marginalized_decomps.json)   | 
 | 1000     | [1000wp_no_decomps.json](1000wp_no_decomps.json) | [1000wp_marginalized_decomps.json](1000wp_marginalized_decomps.json) | 
