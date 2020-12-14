@@ -1,0 +1,27 @@
+{
+    "seed": 0,
+    "data": {
+        "dataset": "wsj",
+        "data_path": "[<path_to_data>]",
+        "num_features": 80,
+        "tokens": "[<path_to_word_pieces>]/word_pieces_tokens_1500.txt",
+        "lexicon": "[<path_to_word_pieces>]/word_pieces_lex_1500.txt",
+    },
+    "model_type": "tds",
+    "model": {
+        "tds_groups": [
+            {"channels": 4, "num_blocks": 5},
+            {"channels": 8, "num_blocks": 5},
+            {"channels": 16, "num_blocks": 5},
+        ],
+        "kernel_size": 5,
+        "dropout": 0.2,
+    },
+    "optim": {
+        "batch_size": 16,
+        "epochs": 400,
+        "learning_rate": 0.2,
+        "step_size": 100,
+        "max_grad_norm": 5,
+    },
+}
