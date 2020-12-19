@@ -4,7 +4,7 @@
 # licensed under the MIT license found in the LICENSE file in the root
 # directory of this source tree.
 
-DATA=/datasets01/iamdb/060820
+DATA=<data_path>
 TRAIN_TEXT=/tmp/iamdb_train_text.txt
 TRAIN_TOKENS=/tmp/iamdb_train_tokens.txt
 WP_TOKENS=/checkpoint/$USER/data/iamdb/word_pieces_tokens_1000.txt

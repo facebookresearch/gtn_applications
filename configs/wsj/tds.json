@@ -2,10 +2,10 @@
   "seed" : 0,
   "data" : {
     "dataset" : "wsj",
-    "data_path" : "/checkpoint/awni/data/wsj/",
+    "data_path" : "<data_path>",
     "num_features" : 80,
-    "tokens" : "/checkpoint/awni/data/wsj/word_pieces_v20k_tokens_1000.txt",
-    "lexicon" : "/checkpoint/awni/data/wsj/word_pieces_v20k_lex_1000.txt"
+    "tokens" : "<replace_me>/word_pieces_v20k_tokens_1000.txt",
+    "lexicon" : "<replace_me>/word_pieces_v20k_lex_1000.txt"
   },
   "model_type" : "tds",
   "model" : {
