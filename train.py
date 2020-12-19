@@ -58,7 +58,8 @@ def parse_args():
         sys.exit(1)
 
     logging.info("World size is : " + str(args.world_size))
-    logging.info(f"Restoring model from epoch {args.last_epoch}")
+    if args.restore:
+        logging.info(f"Restoring model from epoch {args.last_epoch}")
 
     if not use_cpu and torch.cuda.device_count() < args.world_size:
         logging.fatal(
