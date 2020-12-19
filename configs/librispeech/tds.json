@@ -2,10 +2,10 @@
   "seed" : 0,
   "data" : {
     "dataset" : "librispeech",
-    "data_path" : "/checkpoint/awni/data/librispeech/",
+    "data_path" : "<data_path>",
     "num_features" : 80,
-    "tokens" : "/checkpoint/awni/data/librispeech/word_pieces_tokens_1000.txt",
-    "lexicon" : "/checkpoint/awni/data/librispeech/word_pieces_lex_1000.txt"
+    "tokens" : "<replace_me>/word_pieces_tokens_1000.txt",
+    "lexicon" : "<replace_me>/word_pieces_lex_1000.txt"
   },
   "model_type" : "tds",
   "model" : {

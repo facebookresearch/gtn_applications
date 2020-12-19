@@ -2,9 +2,9 @@
   "seed" : 0,
   "data" : {
     "dataset" : "wsj",
-    "data_path" : "/checkpoint/awni/data/wsj/",
+    "data_path" : "<data_path>",
     "num_features" : 80,
-    "tokens" : "/checkpoint/awni/data/wsj/word_pieces_tokens_1000.txt",
+    "tokens" : "<replace_me>/word_pieces_tokens_1000.txt",
     "prepend_wordsep" : true
   },
   "criterion_type" : "transducer",
