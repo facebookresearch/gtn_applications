@@ -2,16 +2,16 @@
   "seed" : 0,
   "data" : {
     "dataset" : "iamdb",
-    "data_path" : "/datasets01/iamdb/060820/",
+    "data_path" : "<data_path>",
     "num_features" : 64,
-    "tokens" : "/checkpoint/awni/data/iamdb/word_pieces_tokens_1000.txt",
-    "lexicon" : "/checkpoint/awni/data/iamdb/word_pieces_lex_1000.txt"
+    "tokens" : "<replace_me>/word_pieces_tokens_1000.txt",
+    "lexicon" : "<replace_me>/word_pieces_lex_1000.txt"
   },
   "model_type" : "tds2d_transducer",
   "model" : {
     "stride" : 4,
     "kernel_size" : 7,
-    "tokens" : "/checkpoint/awni/data/iamdb/word_pieces_tokens_200.txt",
+    "tokens" : "<replace_me>/word_pieces_tokens_200.txt",
     "learn_params" : false,
     "viterbi" : false,
     "scale": "sqrt",

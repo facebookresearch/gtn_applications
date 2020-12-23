@@ -121,7 +121,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data_dir",
-        default="/datasets01/iamdb/060820/",
+        default="<data_path>",
         type=str,
         help="Path to the dataset.",
     )
