@@ -18,8 +18,8 @@ Current examples include:
 
 ## Training
 
-We give an example of how to trian on the [IAM off-line handwriting recognition](http://www.fki.inf.unibe.ch/databases/iam-handwriting-database)
-benchmark.
+We give an example of how to train on the [IAM off-line handwriting recognition](http://www.fki.inf.unibe.ch/databases/iam-handwriting-database)
+benchmark. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/facebookresearch/gtn/blob/master/examples/notebooks/IAM_Handwriting_Recognition.ipynb)
 
 First register [here](https://fki.tic.heia-fr.ch/login) and download the dataset:
 ```
