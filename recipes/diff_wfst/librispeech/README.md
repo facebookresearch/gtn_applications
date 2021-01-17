@@ -8,7 +8,7 @@ Prepare the LibriSpeech dataset:
 
 ```
 cd $ROOT/datasets/download
-sh librispeech.sj <path_to_data>
+sh librispeech.sh <path_to_data>
 cd $ROOT/datasets
 python preprocess_librispeech.py --data_path <path_to_data> --save_path <path_to_save_jsons>
 ```
