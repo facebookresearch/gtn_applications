@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
 if [ $# -ne 3 ]; then
     echo "Script to download IAM Handwriting Database"
     echo "Usage: $0 datadir email password"
