@@ -30,7 +30,7 @@ class Dataset(audioset.Dataset):
                 torchaudio.transforms.TimeMasking(100, iid_masks=True),
             ]
 
-        super(Y, self).__init__(
+        super(Dataset, self).__init__(
             data_path,
             preprocessor,
             split,
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    preprocessor = Preprocessor(args.data_path, 80)
+    preprocessor = audioset.Preprocessor(args.data_path, 80)
     print(f"Number of tokens: {preprocessor.num_tokens}")
     trainset = Dataset(args.data_path, preprocessor, split="train", augment=False)
     if args.save_text is not None:
