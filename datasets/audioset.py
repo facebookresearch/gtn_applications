@@ -32,7 +32,8 @@ class Dataset(torch.utils.data.Dataset):
         # setup transforms:
         self.transforms = [
             torchaudio.transforms.MelSpectrogram(
-                sample_rate=sample_rate, sample_rate * 25 // 1000,
+                sample_rate=sample_rate,
+                n_fft=sample_rate * 25 // 1000,
                 n_mels=preprocessor.num_features,
                 hop_length=sample_rate * 10 // 1000,
             ),
