@@ -265,6 +265,7 @@ class RNN(torch.nn.Module):
         # convolutional front-end:
         convs = []
         in_channels = 1
+        h_out = input_size
         for out_channels, kernel, stride in zip(channels, kernel_sizes, strides):
             padding = (kernel[0] // 2, kernel[1] // 2)
             convs.append(
@@ -280,9 +281,10 @@ class RNN(torch.nn.Module):
             if dropout > 0:
                 convs.append(torch.nn.Dropout(dropout))
             in_channels = out_channels
-
+            dilation = dilation if dilation else 1
+            h_out = torch.floor((h_out + 2*padding - dilation*(kernel - 1) - 1)/stride + 1)
         self.convs = torch.nn.Sequential(*convs)
-        rnn_input_size = input_size * out_channels
+        rnn_input_size = h_out * out_channels
 
         if cell_type.upper() not in ["RNN", "LSTM", "GRU"]:
             raise ValueError(f"Unkown rnn cell type {cell_type}")
