@@ -281,8 +281,7 @@ class RNN(torch.nn.Module):
             if dropout > 0:
                 convs.append(torch.nn.Dropout(dropout))
             in_channels = out_channels
-            dilation = dilation if dilation else 1
-            h_out = torch.floor((h_out + 2*padding - dilation*(kernel - 1) - 1)/stride + 1)
+            h_out //= stride
         self.convs = torch.nn.Sequential(*convs)
         rnn_input_size = h_out * out_channels
 
