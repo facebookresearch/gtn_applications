@@ -15,7 +15,6 @@ import sys
 import time
 import torch
 
-import models
 import utils
 
 
@@ -177,18 +176,18 @@ def train(world_rank, args):
 
     # setup criterion, model:
     logging.info("Loading model ...")
-    criterion, output_size = models.load_criterion(
+    criterion, output_size = utils.load_criterion(
         config.get("criterion_type", "ctc"),
         preprocessor,
         config.get("criterion", {}),
     )
     criterion = criterion.to(device)
-    model = models.load_model(
+    model = utils.load_model(
         config["model_type"], input_size, output_size, config["model"]
     ).to(device)
 
     if args.restore:
-        models.load_from_checkpoint(model, criterion, args.checkpoint_path, True)
+        utils.load_from_checkpoint(model, criterion, args.checkpoint_path, True)
 
     n_params = sum(p.numel() for p in model.parameters())
     logging.info(
