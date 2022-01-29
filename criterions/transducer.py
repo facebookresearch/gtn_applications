@@ -207,6 +207,7 @@ class Transducer(torch.nn.Module):
         self.tokens.arc_sort()
 
         paths = [None] * B
+
         def process(b):
             emissions = gtn.linear_graph(T, C, False)
             cpu_data = outputs[b].cpu().contiguous()
