@@ -7,13 +7,12 @@ LICENSE file in the root directory of this source tree.
 
 import sys
 
-sys.path.append("..")
+sys.path.insert(1, '../gtn_applications')
 
 import unittest
 import torch
 import math
-from utils import ASGLoss
-from models import ASG
+from criterions import asg
 from torch.autograd import gradcheck
 
 
@@ -56,7 +55,7 @@ class TestASGCriterion(unittest.TestCase):
             requires_grad=True,
         )
         transitions = torch.zeros((N + 1, N), device=self.device, requires_grad=True)
-        fwd = ASGLoss(emissions, transitions, labels)
+        fwd = asg.ASGLoss(emissions, transitions, labels)
         self.assertAlmostEqual(fwd.item(), 7.47995, places=4)
 
         fwd.backward()
@@ -113,15 +112,15 @@ class TestASGCriterion(unittest.TestCase):
         expected_path = [2, 1, 0] # collapsed from [2, 1, 1, 0]
         num_replabels = 1
         use_garbage = False
-        asg = ASG(N, num_replabels, use_garbage)
-        for param in asg.parameters():
+        asg_criterion = asg.ASG(N, num_replabels, use_garbage)
+        for param in asg_criterion.parameters():
             param.data = torch.tensor(
                 trans_list, device=self.device, dtype=torch.float32
             ).view(N + num_replabels + 1, N + num_replabels)
         inputs = torch.tensor(input_list, device=self.device, dtype=torch.float32).view(
             1, T, N + num_replabels
         )
-        path = asg.viterbi(inputs)[0].tolist()
+        path = asg_criterion.viterbi(inputs)[0].tolist()
         self.assertTrue(path == expected_path)
 
     @unittest.skip("Enable when gtn supports retain grad graph.")
@@ -138,10 +137,10 @@ class TestASGCriterion(unittest.TestCase):
         ]
 
         def fn(inputs, transition):
-            return ASGLoss(inputs, transition, tgt)
+            return asg.ASGLoss(inputs, transition, tgt)
 
         def fn_mean(inputs, transition):
-            return ASGLoss(inputs, transition, tgt, "mean")
+            return asg.ASGLoss(inputs, transition, tgt, "mean")
 
         inputs = torch.randn(B, T, N, dtype=torch.float, requires_grad=True)
         transitions = torch.randn(N + 1, N, dtype=torch.float, requires_grad=True)
