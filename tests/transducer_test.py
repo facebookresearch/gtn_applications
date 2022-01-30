@@ -253,7 +253,7 @@ class TestTransducer(unittest.TestCase):
         alignments.add_arc(0, 6, 4)
         alignments.add_arc(6, 6, 4)
 
-        emissions = gtn.linear_graph(T, len(tokens), True)
+        emissions = gtn.linear_graph(T, len(tokens), gtn.Graph(gtn.CPU), True)
 
         emissions.set_weights(scores.data_ptr())
         expected_loss = gtn.subtract(

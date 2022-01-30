@@ -9,23 +9,44 @@ import gtn
 import torch
 import math
 
+# blank idx is REQUIRED to be zero for current implementation
+STC_BLANK_IDX = 0
+
 
 class STCLossFunction(torch.autograd.Function):
+    """
+    Creates a function for STC with autograd
+    NOTE: This function assumes <star>, <star>/token is appended to the input
+    """
+
     @staticmethod
-    def create_stc_graph(target, blank_idx, star_idx, wt):
+    def create_stc_graph(target, star_idx, prob):
+        """
+        Creates STC label graph
+
+        Attributes:
+            target: initial value for token insertion penalty (before applying log)
+            star_idx: index of star token
+            prob: token insertion penalty (before applying log)
+        Returns:
+            STC label graph as gtn.Graph
+        """
         g = gtn.Graph(False)
         L = len(target)
         S = 2 * L + 1
+        # create self-less CTC graph
         for l in range(S):
             idx = (l - 1) // 2
             g.add_node(l == 0, l == S - 1 or l == S - 2)
-            label = target[idx] if l % 2 else blank_idx
-            if label == blank_idx:
+            label = target[idx] if l % 2 else STC_BLANK_IDX
+            if label == STC_BLANK_IDX:
                 g.add_arc(l, l, label)
             if l > 0:
                 g.add_arc(l - 1, l, label)
-            if l % 2 and l > 1 and label != target[idx - 1]:
+            if l % 2 and l > 1:
                 g.add_arc(l - 2, l, label)
+
+        # add extra nodes/arcs required for STC
         for l in range(L + 1):
             p1 = 2 * l - 1
             p2 = 2 * l
@@ -33,32 +54,33 @@ class STCLossFunction(torch.autograd.Function):
             c1 = g.add_node(False, l == L)
             idx = star_idx if l == L else (star_idx + target[l])
             if p1 >= 0:
-                g.add_arc(p1, c1, idx, idx, math.log(wt))
-            g.add_arc(p2, c1, idx, idx, math.log(wt))
-            g.add_arc(c1, c1, idx, idx, math.log(wt))
+                g.add_arc(p1, c1, idx, idx, math.log(prob))
+            g.add_arc(p2, c1, idx, idx, math.log(prob))
+            g.add_arc(c1, c1, idx, idx, math.log(prob))
             if l < L:
                 g.add_arc(c1, 2 * l + 1, target[l])
-            g.add_arc(c1, p2, blank_idx)
-        g.arc_sort(False)
+            g.add_arc(c1, p2, STC_BLANK_IDX)
+
         return g
 
     @staticmethod
-    def forward(ctx, log_probs, targets, wt, blank_idx=0, reduction="none"):
-        B, T, C = log_probs.shape
-        losses = [None] * B
-        scales = [None] * B
-        emissions_graphs = [None] * B
+    def forward(ctx, inputs, targets, prob, reduction="none"):
+        B, T, Cstar = inputs.shape
+        losses, scales, emissions_graphs = [None] * B, [None] * B, [None] * B
+        C = Cstar // 2
 
         def process(b):
             # create emission graph
             g_emissions = gtn.linear_graph(
-                T, C, gtn.Device(gtn.CPU), log_probs.requires_grad
+                T, Cstar, gtn.Device(gtn.CPU), inputs.requires_grad
             )
-            cpu_data = log_probs[b].cpu().contiguous()
+            cpu_data = inputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
             # create criterion graph
-            g_criterion = STCLossFunction.create_stc_graph(targets[b], blank_idx, C, wt)
+            g_criterion = STCLossFunction.create_stc_graph(targets[b], C, prob)
+            g_criterion.arc_sort(False)
+
             # compose the graphs
             g_loss = gtn.negate(
                 gtn.forward_score(gtn.compose(g_criterion, g_emissions))
@@ -77,9 +99,9 @@ class STCLossFunction(torch.autograd.Function):
 
         gtn.parallel_for(process, range(B))
 
-        ctx.auxiliary_data = (losses, scales, emissions_graphs, log_probs.shape)
+        ctx.auxiliary_data = (losses, scales, emissions_graphs, inputs.shape)
         loss = torch.tensor([losses[b].item() * scales[b] for b in range(B)])
-        return torch.mean(loss.cuda() if log_probs.is_cuda else loss)
+        return torch.mean(loss.cuda() if inputs.is_cuda else loss)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -102,8 +124,7 @@ class STCLossFunction(torch.autograd.Function):
         return (
             input_grad,
             None,  # targets
-            None,  # wt
-            None,  # blank_idx
+            None,  # prob
             None,  # reduction
         )
 
@@ -112,34 +133,89 @@ STCLoss = STCLossFunction.apply
 
 
 class STC(torch.nn.Module):
-    def __init__(self, blank, w0, wlast, thalf):
+    """The Star Temporal Classification loss.
+
+    Calculates loss between a continuous (unsegmented) time series and a
+    partially labeled target sequence.
+
+    Attributes:
+        p0: initial value for token insertion penalty (before applying log)
+        plast: final value for token insertion penalty (before applying log)
+        thalf: number of steps for token insertion penalty (before applying log)
+            to reach (p0 + plast)
+    """
+
+    def __init__(self, blank_idx, p0=1, plast=1, thalf=1, reduction="none"):
         super(STC, self).__init__()
-        assert blank == 0
-        self.blank = blank  # index of blank label
-        self.w0 = w0
-        self.wlast = wlast
+        assert blank_idx == STC_BLANK_IDX
+        self.p0 = p0
+        self.plast = plast
         self.thalf = thalf
         self.nstep = 0
+        self.reduction = reduction
 
     @staticmethod
     def logsubexp(a, b):
-        with torch.set_grad_enabled(True):
+        """
+        Computes log(exp(a) - exp(b))
+
+        Args:
+            a: Tensor of size (M x N)
+            b: Tensor of size (M x N x O)
+        Returns:
+            Tensor of size (M x N x O)
+        """
+
+        with torch.set_grad_enabled(a.requires_grad):
             B, T, C = b.shape
             a = a.tile((1, 1, C))
             return a + torch.log1p(1e-7 - torch.exp(b - a))
 
     def forward(self, inputs, targets):
+        """
+        Computes STC loss for the given input and partialy labeled target
+
+        Args:
+            inputs: Tensor of size (T, B, C)
+                T - # time steps, B - batch size, C - alphabet size (including blank)
+                The logarithmized probabilities of the outputs (e.g. obtained with torch.nn.functional.log_softmax())
+            targets: list of size [B]
+                List of target sequences for each batch
+
+        Returns:
+            Tensor of size 1
+            Mean STC loss of all samples in the batch
+        """
+
         if self.training:
             self.nstep += 1
 
-        wt = self.wlast + (self.w0 - self.wlast) * math.exp(
+        prob = self.plast + (self.p0 - self.plast) * math.exp(
             -self.nstep * math.log(2) / self.thalf
         )
+        # (T, B, C) --> (B, T, C)
         log_probs = inputs.permute(1, 0, 2)
 
         B, T, C = log_probs.shape
         with torch.set_grad_enabled(log_probs.requires_grad):
+            # <star>
             lse = torch.logsumexp(log_probs[:, :, 1:], 2, keepdim=True)
+
+            # select only the tokens present in current batch
+            select_idx = [STC_BLANK_IDX] + list(
+                set([t for target in targets for t in target])
+            )
+            target_map = {}
+            for i, t in enumerate(select_idx):
+                target_map[t] = i
+
+            select_idx = torch.IntTensor(select_idx).to(log_probs.device)
+            log_probs = log_probs.index_select(2, select_idx)
+            targets = [[target_map[t] for t in target] for target in targets]
+
+            # <star>\tokens for all tokens present in current batch
             neglse = STC.logsubexp(lse, log_probs[:, :, 1:])
+
+            # concatenate (tokens, <star>, <star>\tokens)
             log_probs = torch.cat([log_probs, lse, neglse], dim=2)
-        return STCLoss(log_probs, targets, wt, self.blank, "mean")
+        return STCLoss(log_probs, targets, prob, self.reduction)

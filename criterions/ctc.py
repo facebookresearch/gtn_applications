@@ -37,7 +37,9 @@ class CTCLossFunction(torch.autograd.Function):
 
         def process(b):
             # create emission graph
-            g_emissions = gtn.linear_graph(T, C, log_probs.requires_grad)
+            g_emissions = gtn.linear_graph(
+                T, C, gtn.Device(gtn.CPU), log_probs.requires_grad
+            )
             cpu_data = log_probs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 

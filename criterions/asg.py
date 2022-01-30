@@ -93,7 +93,9 @@ class ASGLossFunction(torch.autograd.Function):
 
         def process(b):
             # create emission graph
-            g_emissions = gtn.linear_graph(T, C, inputs.requires_grad)
+            g_emissions = gtn.linear_graph(
+                T, C, gtn.Device(gtn.CPU), inputs.requires_grad
+            )
             cpu_data = inputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
@@ -214,7 +216,7 @@ class ASG(torch.nn.Module):
 
         def process(b):
             # create emission graph
-            g_emissions = gtn.linear_graph(T, C, False)
+            g_emissions = gtn.linear_graph(T, C, gtn.Device(gtn.CPU), False)
             cpu_data = outputs[b].cpu().contiguous()
             g_emissions.set_weights(cpu_data.data_ptr())
 
@@ -223,7 +225,7 @@ class ASG(torch.nn.Module):
             g_path = gtn.viterbi_path(gtn.intersect(g_emissions, g_transitions))
             prediction = g_path.labels_to_list()
 
-            collapsed_prediction = [p for p, _ in groupby(prediction)]
+            collapsed_prediction = [p for p, _ in itertools.groupby(prediction)]
             if self.garbage_idx is not None:
                 # remove garbage tokens
                 collapsed_prediction = [

@@ -209,7 +209,7 @@ class Transducer(torch.nn.Module):
         paths = [None] * B
 
         def process(b):
-            emissions = gtn.linear_graph(T, C, False)
+            emissions = gtn.linear_graph(T, C, gtn.Device(gtn.CPU), False)
             cpu_data = outputs[b].cpu().contiguous()
             emissions.set_weights(cpu_data.data_ptr())
             if self.transitions is not None:
@@ -259,7 +259,7 @@ class TransducerLossFunction(torch.autograd.Function):
 
         def process(b):
             # Create emissions graph:
-            emissions = gtn.linear_graph(T, C, inputs.requires_grad)
+            emissions = gtn.linear_graph(T, C, gtn.Device(gtn.CPU), inputs.requires_grad)
             cpu_data = inputs[b].cpu().contiguous()
             emissions.set_weights(cpu_data.data_ptr())
             target = make_chain_graph(targets[b])
@@ -484,7 +484,7 @@ class ConvTransduce1DFunction(torch.autograd.Function):
 
         def process(b):
             for t in range(0, T - kernel_size + 1, stride):
-                input_graph = gtn.linear_graph(kernel_size, C, inputs.requires_grad)
+                input_graph = gtn.linear_graph(kernel_size, C, gtn.Device(gtn.CPU), inputs.requires_grad)
                 window = cpu_inputs[b, t : t + kernel_size, :].contiguous()
                 input_graph.set_weights(window.data_ptr())
                 if viterbi:

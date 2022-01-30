@@ -6,13 +6,12 @@ LICENSE file in the root directory of this source tree.
 """
 
 import sys
-
-sys.path.append("..")
+sys.path.insert(1, '../gtn_applications')
 
 import unittest
 import torch
 import math
-from utils import CTCLoss
+from criterions import ctc
 from torch.autograd import gradcheck
 
 
@@ -32,7 +31,7 @@ class TestCTCCriterion(unittest.TestCase):
             .to(self.device)
         )
         log_probs = torch.log(emissions)
-        fwd = CTCLoss(log_probs.to(self.device), labels, N - 1)
+        fwd = ctc.CTCLoss(log_probs.to(self.device), labels, N - 1)
         self.assertAlmostEqual(fwd.item(), 0.0)
 
     def test_fwd(self):
@@ -43,7 +42,7 @@ class TestCTCCriterion(unittest.TestCase):
         log_probs = torch.log(emissions)
         m = torch.nn.LogSoftmax(2)
         log_probs = m(log_probs)
-        fwd = CTCLoss(log_probs.to(self.device), labels, N - 1)
+        fwd = ctc.CTCLoss(log_probs.to(self.device), labels, N - 1)
         self.assertAlmostEqual(fwd.item(), -math.log(0.25 * 0.25 * 0.25 * 5))
 
     def test_fwd_bwd(self):
@@ -64,7 +63,7 @@ class TestCTCCriterion(unittest.TestCase):
         # fmt: on
         log_emissions = torch.log(emissions.view(1, T, N))
         log_emissions.retain_grad()
-        fwd = CTCLoss(torch.nn.functional.log_softmax(log_emissions, 2), labels, N - 1)
+        fwd = ctc.CTCLoss(torch.nn.functional.log_softmax(log_emissions, 2), labels, N - 1)
         self.assertAlmostEqual(fwd.item(), 3.34211, places=4)
         fwd.backward()
         # fmt: off
@@ -94,10 +93,10 @@ class TestCTCCriterion(unittest.TestCase):
         ]
 
         def fn(input):
-            return CTCLoss(input, tgt, N - 1)
+            return ctc.CTCLoss(input, tgt, N - 1)
 
         def fn_mean(input):
-            return CTCLoss(input, tgt, N - 1, "mean")
+            return ctc.CTCLoss(input, tgt, N - 1, "mean")
 
         inputs = torch.randn(
             B, T, N, dtype=torch.float, device=self.device, requires_grad=True
