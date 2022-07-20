@@ -142,7 +142,7 @@ class STC(torch.nn.Module):
         p0: initial value for token insertion penalty (before applying log)
         plast: final value for token insertion penalty (before applying log)
         thalf: number of steps for token insertion penalty (before applying log)
-            to reach (p0 + plast)
+            to reach (p0 + plast)/2
     """
 
     def __init__(self, blank_idx, p0=1, plast=1, thalf=1, reduction="none"):
